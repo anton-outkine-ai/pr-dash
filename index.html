@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PR // Mission Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap"
+    rel="stylesheet"
+  />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d0e;
+      --bg-soft: #131316;
+      --surface: #16161a;
+      --surface-2: #1c1c22;
+      --surface-3: #25252c;
+      --border: #25252b;
+      --border-strong: #353540;
+      --text: #ececef;
+      --text-muted: #a4a4ad;
+      --text-dim: #6b6b75;
+      --green: #7dffa1;
+      --green-dim: #2c5d3a;
+      --red: #ff5b48;
+      --red-dim: #6c2823;
+      --amber: #ffb544;
+      --amber-dim: #6a4715;
+      --blue: #84b6ff;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "DM Sans", system-ui, sans-serif;
+      font-feature-settings: "ss01" on;
+      min-height: 100vh;
+      background-image:
+        radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.025) 1px, transparent 0),
+        radial-gradient(900px 480px at 0% 0%, rgba(125, 255, 161, 0.025), transparent 60%),
+        radial-gradient(900px 480px at 100% 100%, rgba(255, 91, 72, 0.018), transparent 60%);
+      background-size: 22px 22px, 100% 100%, 100% 100%;
+      background-attachment: fixed;
+    }
+
+    .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+    .serif-italic { font-family: "Instrument Serif", "Iowan Old Style", serif; font-style: italic; }
+
+    /* Universal link rule: link color matches surrounding text; underline on hover signals clickability. */
+    a { color: inherit; text-decoration: none; }
+    a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+    .container { max-width: 1180px; margin: 0 auto; padding: 36px 28px 80px; }
+
+    /* ===== HEADER ===== */
+    .head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 32px; flex-wrap: wrap;
+      padding-bottom: 22px; margin-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .head::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+      background: linear-gradient(90deg, var(--green) 0%, transparent 18%);
+      opacity: 0.6;
+    }
+    .brand-tag {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .brand-tag .dot { color: var(--green); margin-right: 6px; animation: pulse 2.4s ease-in-out infinite; display: inline-block; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .brand-title {
+      font-family: "Instrument Serif", serif;
+      font-style: italic;
+      font-size: 56px; line-height: 0.95;
+      letter-spacing: -0.015em;
+    }
+    .brand-title .ampersand { color: var(--green); font-weight: 400; padding: 0 4px; }
+
+    .head-right { display: flex; align-items: center; gap: 14px; }
+    .status-line {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px; letter-spacing: 0.18em;
+      color: var(--text-dim); white-space: nowrap;
+    }
+    .status-line .ok { color: var(--green); }
+    .status-line .fail { color: var(--red); }
+    .status-line .pending { color: var(--amber); }
+
+    .btn {
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px; font-weight: 500;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      padding: 10px 16px;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 10px;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    }
+    .btn:hover { background: var(--surface-2); border-color: var(--text-muted); color: var(--green); }
+    .btn .icon { width: 14px; height: 14px; }
+    .btn kbd {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; padding: 1px 5px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      letter-spacing: 0;
+    }
+    /* Wrapper around the refresh icon: lucide replaces the inner <i> with <svg> on init,
+       but the wrapper element is left alone so the .spin class can be reliably toggled. */
+    .spin-wrap { display: inline-flex; align-items: center; }
+    .spin-wrap.spin { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-compact { padding: 10px 12px; }
+    .btn-compact span { font-size: 10px; }
+
+    /* ===== SUMMARY ===== */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      margin-bottom: 28px;
+      position: relative;
+    }
+    .sum-cell {
+      padding: 22px 22px 18px;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 6px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .sum-cell:last-child { border-right: 0; }
+    .sum-cell:hover { background: var(--surface-2); }
+    .sum-cell.active { background: var(--surface-2); }
+    .sum-cell.active::before {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+      background: var(--text);
+    }
+    .sum-cell.active.ok::before { background: var(--green); }
+    .sum-cell.active.fail::before { background: var(--red); }
+    .sum-cell.active.pending::before { background: var(--amber); }
+    .sum-cell::after {
+      content: ""; position: absolute; top: 14px; right: 14px;
+      width: 6px; height: 6px; background: var(--border-strong);
+    }
+    .sum-cell.ok::after  { background: var(--green); }
+    .sum-cell.fail::after { background: var(--red); }
+    .sum-cell.pending::after { background: var(--amber); }
+
+    .sum-num {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 38px; font-weight: 600;
+      letter-spacing: -0.02em; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .sum-label {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    /* ===== CARD ===== */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--border-strong);
+      margin-bottom: 14px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+      animation: slidein 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+      position: relative;
+    }
+    @keyframes slidein {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card:hover { background: var(--surface-2); }
+    .card.health-ok { border-left-color: var(--green); }
+    .card.health-fail { border-left-color: var(--red); }
+    .card.health-pending { border-left-color: var(--amber); }
+    .card.draft { opacity: 0.7; }
+
+    /* Always-visible top portion (head + branch line). Whole region is the click target. */
+    .card-summary { cursor: pointer; user-select: none; }
+    .card-head {
+      padding: 18px 22px 10px;
+      display: grid; grid-template-columns: 1fr auto auto; gap: 16px;
+      align-items: baseline;
+    }
+    .card-summary:hover .chevron { color: var(--text); }
+    .chevron {
+      width: 16px; height: 16px;
+      color: var(--text-dim);
+      transition: transform 0.18s ease, color 0.12s ease;
+      align-self: center;
+    }
+    .card.expanded .chevron { transform: rotate(180deg); color: var(--text); }
+    .card-body { display: none; }
+    .card.expanded .card-body { display: block; }
+    .card-title {
+      font-size: 19px; font-weight: 500;
+      letter-spacing: -0.01em; line-height: 1.3;
+      min-width: 0;
+    }
+    /* Inline link: hit area covers only the wrapped text, not the rest of the grid cell. */
+    .card-title a { color: var(--text); display: inline; }
+
+    .card-tags { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .tag {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      padding: 4px 9px; border: 1px solid var(--border-strong); color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .branch {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 0 22px 14px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .branch .branch-glyph {
+      color: var(--text-dim);
+      width: 12px; height: 12px;
+    }
+    /* Branch name as a copy button. The branch name itself reads as a link with hover-underline. */
+    .branch-name {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: none; border: 0; padding: 0; margin: 0;
+      font: inherit; color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+    }
+    .branch-name:hover { color: var(--text); }
+    .branch-name:hover .branch-text { text-decoration: underline; text-underline-offset: 3px; }
+    .branch-name .copy-icon {
+      width: 11px; height: 11px;
+      color: var(--text-dim);
+      opacity: 0; transition: opacity 0.12s ease;
+    }
+    .branch-name:hover .copy-icon { opacity: 1; }
+    .branch-name.copied .copy-icon { opacity: 1; color: var(--green); }
+    .branch-name.copied::after {
+      content: "copied";
+      position: absolute; left: calc(100% + 10px); top: 50%;
+      transform: translateY(-50%);
+      font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--green);
+      animation: copyfade 1.2s ease-out forwards;
+      white-space: nowrap;
+    }
+    @keyframes copyfade {
+      0% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    .branch-meta {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--text-dim);
+      font-size: 10px; letter-spacing: 0.06em;
+    }
+    .branch-meta .icon-xs { width: 11px; height: 11px; }
+    .branch-meta.has-sessions { color: var(--blue); }
+    .branch-sep { color: var(--border-strong); }
+
+    /* ===== TRUNK MERGE BADGE ===== */
+    .trunk-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      padding: 3px 8px;
+      border: 1px solid;
+    }
+    .trunk-badge .icon-xs { width: 10px; height: 10px; }
+    .trunk-badge.staged    { color: var(--amber); border-color: var(--amber-dim); background: rgba(255, 181, 68, 0.06); }
+    .trunk-badge.in_progress {
+      color: var(--blue); border-color: rgba(132, 182, 255, 0.4);
+      background: rgba(132, 182, 255, 0.06);
+    }
+    .trunk-badge.in_progress .pulse {
+      width: 6px; height: 6px; background: var(--blue);
+      border-radius: 50%;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    /* ===== CLAUDE SESSIONS ===== */
+    .sessions-section {
+      border-top: 1px solid var(--border);
+      padding: 16px 22px 18px;
+    }
+    .sessions-section-title {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .sessions-section-title .rule {
+      flex: 1; height: 1px; background: var(--border-strong); opacity: 0.5;
+    }
+    .sess-list { list-style: none; padding: 0; margin: 0; }
+    .sess-item {
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--border);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px 16px;
+      align-items: baseline;
+    }
+    .sess-item:last-child { border-bottom: 0; padding-bottom: 0; }
+    .sess-title { font-size: 13px; color: var(--text); min-width: 0; }
+    .sess-title .untitled { color: var(--text-dim); font-style: italic; }
+    .sess-meta {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      color: var(--text-dim);
+      display: flex; align-items: center; gap: 10px;
+      white-space: nowrap;
+    }
+    .sess-meta .sep { color: var(--border-strong); }
+    .sess-counts { color: var(--text-muted); }
+    .sess-id {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9.5px;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      grid-column: 1 / -1;
+    }
+    .sessions-empty {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px; color: var(--text-dim); font-style: italic;
+    }
+
+    /* ===== STATUS ROW ===== */
+    .status-row {
+      display: grid; grid-template-columns: 1.1fr 1fr;
+      border-top: 1px solid var(--border);
+    }
+    .status-block {
+      padding: 16px 22px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .status-block + .status-block { border-left: 1px solid var(--border); }
+    .status-label {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .status-value {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 14px; font-weight: 500;
+    }
+    .status-value .icon { width: 16px; height: 16px; flex-shrink: 0; }
+    .status-meta {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    .status-meta .sep { color: var(--text-dim); margin: 0 6px; }
+
+    .ok { color: var(--green); }
+    .fail { color: var(--red); }
+    .pending { color: var(--amber); }
+    .dim { color: var(--text-dim); }
+
+    /* Counts as cockpit gauges */
+    .counts { display: flex; gap: 0; }
+    .gauge {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid var(--border-strong);
+      display: flex; flex-direction: column; gap: 2px;
+      font-family: "JetBrains Mono", monospace;
+      position: relative;
+    }
+    .gauge + .gauge { border-left: 0; }
+    .gauge-num { font-size: 18px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .gauge-label { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); }
+    .gauge.zero .gauge-num { color: var(--text-dim); }
+    .gauge.ok    { border-color: var(--green-dim);  color: var(--green); }
+    .gauge.fail  { border-color: var(--red-dim);    color: var(--red); }
+    .gauge.pending { border-color: var(--amber-dim); color: var(--amber); }
+
+    /* ===== FAILING SECTION ===== */
+    .fail-section {
+      border-top: 1px solid var(--border);
+      padding: 16px 22px 18px;
+      background:
+        repeating-linear-gradient(
+          135deg,
+          transparent 0 14px,
+          rgba(255, 91, 72, 0.035) 14px 15px
+        );
+    }
+    .fail-section-title {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--red);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .fail-section-title .rule {
+      flex: 1; height: 1px; background: var(--red-dim); opacity: 0.5;
+    }
+
+    .fail-list { list-style: none; padding: 0; margin: 0; }
+    .fail-item {
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .fail-item:last-child { border-bottom: 0; padding-bottom: 0; }
+
+    .fail-row {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px;
+      min-width: 0;
+    }
+    .fail-row a {
+      color: var(--text);
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .fail-state {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 0.18em; font-weight: 600;
+      padding: 3px 7px;
+      background: var(--red); color: #1a0707;
+      flex-shrink: 0;
+    }
+    .fail-row .ext { color: var(--text-dim); width: 12px; height: 12px; }
+
+    /* Buildkite block */
+    .bk-block {
+      margin: 10px 0 4px 22px;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 2px solid var(--amber);
+      position: relative;
+    }
+    .bk-block::before {
+      content: "";
+      position: absolute; top: -1px; left: -3px; width: 9px; height: 9px;
+      background: var(--amber);
+    }
+    .bk-head {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .bk-head .pipeline { color: var(--text); }
+    .bk-state {
+      padding: 2px 7px;
+      font-size: 9px; letter-spacing: 0.15em;
+      border: 1px solid var(--red-dim); color: var(--red);
+    }
+    .bk-jobs {
+      list-style: none; padding: 0; margin: 0;
+      font-family: "JetBrains Mono", monospace; font-size: 12px;
+    }
+    .bk-job {
+      padding: 4px 0;
+      display: flex; align-items: center; gap: 10px;
+      min-width: 0;
+    }
+    .bk-job-state {
+      font-size: 8.5px; letter-spacing: 0.18em; font-weight: 600;
+      padding: 2px 6px; background: var(--red); color: #170503;
+      flex-shrink: 0;
+    }
+    .bk-job a {
+      color: var(--text-muted);
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .bk-foot {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; color: var(--text-dim); font-style: italic;
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px dashed var(--border);
+    }
+
+    /* ===== ERROR / EMPTY ===== */
+    .error {
+      padding: 16px 20px; margin-bottom: 20px;
+      border: 1px solid var(--red-dim);
+      background: rgba(255, 91, 72, 0.06);
+      color: var(--red);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+    }
+    .empty {
+      padding: 100px 20px;
+      text-align: center;
+      color: var(--text-dim);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 13px; letter-spacing: 0.25em;
+    }
+    .empty .glyph { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+
+    /* ===== INITIAL LOADING ===== */
+    .skeleton {
+      height: 96px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--border-strong);
+      margin-bottom: 14px;
+      position: relative; overflow: hidden;
+    }
+    .skeleton::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+      animation: shimmer 1.6s infinite;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    @media (max-width: 720px) {
+      .summary { grid-template-columns: repeat(2, 1fr); }
+      .sum-cell:nth-child(2) { border-right: 0; }
+      .sum-cell:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+      .status-row { grid-template-columns: 1fr; }
+      .status-block + .status-block { border-left: 0; border-top: 1px solid var(--border); }
+      .brand-title { font-size: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="head">
+      <div>
+        <div class="brand-tag"><span class="dot">●</span>PR · MISSION CONTROL · v1</div>
+        <div class="brand-title">Open <span class="ampersand">&amp;</span> Pending</div>
+      </div>
+      <div class="head-right">
+        <div id="status-line" class="status-line">// INIT //</div>
+        <button id="expand-all" class="btn btn-compact" title="Expand all">
+          <i data-lucide="chevrons-down" class="icon"></i>
+          <span>Expand</span>
+        </button>
+        <button id="collapse-all" class="btn btn-compact" title="Collapse all">
+          <i data-lucide="chevrons-up" class="icon"></i>
+          <span>Collapse</span>
+        </button>
+        <button id="refresh" class="btn" title="Refresh (r)">
+          <span id="refresh-spin" class="spin-wrap"><i data-lucide="refresh-cw" class="icon"></i></span>
+          <span>Refresh</span>
+          <kbd>R</kbd>
+        </button>
+      </div>
+    </header>
+
+    <div id="error" class="error" style="display:none"></div>
+
+    <div id="summary" class="summary" style="display:none">
+      <div class="sum-cell" data-filter="all" id="sc-total">
+        <div class="sum-num" id="sum-total">--</div>
+        <div class="sum-label">Open PRs</div>
+      </div>
+      <div class="sum-cell ok" data-filter="approved" id="sc-approved">
+        <div class="sum-num ok" id="sum-approved">--</div>
+        <div class="sum-label">Approved</div>
+      </div>
+      <div class="sum-cell pending" data-filter="awaiting" id="sc-review">
+        <div class="sum-num pending" id="sum-review">--</div>
+        <div class="sum-label">Awaiting Review</div>
+      </div>
+      <div class="sum-cell fail" data-filter="failing" id="sc-failing">
+        <div class="sum-num fail" id="sum-failing">--</div>
+        <div class="sum-label">Failing CI</div>
+      </div>
+    </div>
+
+    <div id="prs">
+      <div class="skeleton"></div>
+      <div class="skeleton" style="animation-delay:0.1s"></div>
+      <div class="skeleton" style="animation-delay:0.2s"></div>
+    </div>
+    <div id="empty" class="empty" style="display:none">
+      <div class="glyph">/ /</div>
+      <div>NO OPEN PRS</div>
+    </div>
+  </div>
+
+  <script>
+    const REVIEW = {
+      APPROVED:          { icon: "check-circle-2", cls: "ok",      label: "Approved" },
+      CHANGES_REQUESTED: { icon: "x-octagon",      cls: "fail",    label: "Changes Requested" },
+      REVIEW_REQUIRED:   { icon: "clock",          cls: "pending", label: "Review Required" },
+      "":                { icon: "user-plus",      cls: "dim",     label: "No Reviewers" },
+    };
+
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+    const pad2 = (n) => String(n).padStart(2, "0");
+
+    // Strip leading ticket prefix like "AVP-1234: " or "FRONTIER-26999: " from PR titles —
+    // the issue tracker tag is noisy in this view.
+    const stripTicket = (title) => String(title ?? "").replace(/^\s*[A-Z]+[-_]?\d+\s*[:\-]\s*/, "");
+
+    const REL_UNITS = [
+      [60, "s"], [60, "m"], [24, "h"], [7, "d"], [4.345, "w"], [12, "mo"], [Infinity, "y"],
+    ];
+    function relTime(iso) {
+      if (!iso) return "";
+      const t = Date.parse(iso);
+      if (isNaN(t)) return "";
+      let diff = (Date.now() - t) / 1000;
+      if (diff < 0) diff = 0;
+      let unit = "s";
+      for (const [div, u] of REL_UNITS) {
+        if (diff < div) { unit = u; break; }
+        diff /= div;
+        unit = u;
+      }
+      return `${Math.floor(diff)}${unit} ago`;
+    }
+
+    const healthClass = (pr) => {
+      if (pr.checks_failing > 0 || pr.review_decision === "CHANGES_REQUESTED") return "health-fail";
+      if (pr.review_decision === "APPROVED" && pr.checks_pending === 0 && pr.checks_failing === 0) return "health-ok";
+      return "health-pending";
+    };
+
+    // Three buckets, ordered top-to-bottom: approved, awaiting review, failing.
+    // "Failing" wins over "approved": an approved-but-broken PR still needs attention,
+    // but per user spec the order remains approved → awaiting → failing.
+    function bucket(pr) {
+      if (pr.checks_failing > 0 || pr.review_decision === "CHANGES_REQUESTED") return 2;
+      if (pr.review_decision === "APPROVED") return 0;
+      return 1;
+    }
+    const BUCKET_NAME = ["approved", "awaiting", "failing"];
+
+    function comparePRs(a, b) {
+      const ba = bucket(a), bb = bucket(b);
+      if (ba !== bb) return ba - bb;
+      // Secondary: most-recently pushed first.
+      const ta = Date.parse(a.last_commit_at || a.updated_at || "") || 0;
+      const tb = Date.parse(b.last_commit_at || b.updated_at || "") || 0;
+      return tb - ta;
+    }
+
+    function renderBuildkite(bk) {
+      if (!bk) return "";
+      if (bk.error) {
+        return `
+          <div class="bk-block" style="border-left-color: var(--red-dim);">
+            <div class="bk-head"><span style="color:var(--red)">⚠ BK ERROR</span></div>
+            <div class="bk-foot">${esc(bk.error)}</div>
+          </div>`;
+      }
+      const jobs = bk.failed_jobs.map(j => `
+        <li class="bk-job">
+          <span class="bk-job-state">${esc(j.state)}</span>
+          <a href="${esc(j.url || "#")}" target="_blank" rel="noreferrer">${esc(j.name)}</a>
+        </li>`).join("");
+      const broken = bk.broken_count > 0
+        ? `<div class="bk-foot">+${bk.broken_count} downstream jobs skipped (dependency failure)</div>`
+        : "";
+      return `
+        <div class="bk-block">
+          <div class="bk-head">
+            <span>Buildkite</span>
+            <span class="pipeline">#${esc(bk.build)}</span>
+            <span style="color:var(--text-dim)">${esc(bk.pipeline)}</span>
+            <span class="bk-state">${esc(bk.state || "?")}</span>
+          </div>
+          <ul class="bk-jobs">${jobs || `<li class="bk-foot">No failed jobs reported.</li>`}</ul>
+          ${broken}
+        </div>`;
+    }
+
+    function renderFailingCheck(c) {
+      return `
+        <li class="fail-item">
+          <div class="fail-row">
+            <span class="fail-state">${esc(c.state)}</span>
+            <a href="${esc(c.url || "#")}" target="_blank" rel="noreferrer">${esc(c.name)}</a>
+            <i data-lucide="external-link" class="ext"></i>
+          </div>
+          ${renderBuildkite(c.buildkite)}
+        </li>`;
+    }
+
+    function renderSession(s) {
+      const title = s.title
+        ? esc(s.title)
+        : `<span class="untitled">untitled session</span>`;
+      const counts = `${s.user_msgs} prompts · ${s.assistant_msgs} replies`;
+      const last = s.last_ts ? relTime(s.last_ts) : "";
+      return `
+        <li class="sess-item">
+          <div class="sess-title">${title}</div>
+          <div class="sess-meta">
+            <span class="sess-counts">${counts}</span>
+            ${last ? `<span class="sep">·</span><span>${esc(last)}</span>` : ""}
+          </div>
+          <div class="sess-id">${esc(s.session_id)}</div>
+        </li>`;
+    }
+
+    function renderSessionsBlock(sessions) {
+      if (!sessions || !sessions.length) {
+        return `
+          <div class="sessions-section">
+            <div class="sessions-section-title">
+              <span>Local Claude sessions</span>
+              <span class="rule"></span>
+            </div>
+            <div class="sessions-empty">No local Claude Code sessions found for this branch.</div>
+          </div>`;
+      }
+      return `
+        <div class="sessions-section">
+          <div class="sessions-section-title">
+            <span>Local Claude sessions · ${pad2(sessions.length)}</span>
+            <span class="rule"></span>
+          </div>
+          <ul class="sess-list">${sessions.map(renderSession).join("")}</ul>
+        </div>`;
+    }
+
+    function renderPR(pr, idx) {
+      const review = REVIEW[pr.review_decision] || REVIEW[""];
+      const failing = pr.failing_checks.length
+        ? `<div class="fail-section">
+             <div class="fail-section-title">
+               <span>Failing checks · ${pad2(pr.failing_checks.length)}</span>
+               <span class="rule"></span>
+             </div>
+             <ul class="fail-list">${pr.failing_checks.map(renderFailingCheck).join("")}</ul>
+           </div>`
+        : "";
+
+      const tags = [];
+      if (pr.draft) tags.push(`<span class="tag">Draft</span>`);
+
+      const cleanTitle = stripTicket(pr.title) || pr.title;
+
+      const sessions = pr.claude_sessions || [];
+      const sessionMeta = sessions.length
+        ? `<span class="branch-meta has-sessions">
+             <i data-lucide="terminal" class="icon-xs"></i>
+             <span>${sessions.length} local session${sessions.length === 1 ? "" : "s"}</span>
+           </span>`
+        : `<span class="branch-meta">
+             <i data-lucide="terminal" class="icon-xs"></i>
+             <span>no local sessions</span>
+           </span>`;
+
+      const pushMeta = pr.last_commit_at
+        ? `<span class="branch-meta">
+             <i data-lucide="git-commit" class="icon-xs"></i>
+             <span>pushed ${esc(relTime(pr.last_commit_at))}</span>
+           </span>`
+        : "";
+
+      const trunk = pr.trunk_merge || {};
+      let trunkBadge = "";
+      if (trunk.state === "staged") {
+        trunkBadge = `
+          <span class="trunk-badge staged" title="Trunk: merge requested">
+            <i data-lucide="play" class="icon-xs"></i>
+            <span>Staged</span>
+          </span>`;
+      } else if (trunk.state === "in_progress") {
+        trunkBadge = `
+          <span class="trunk-badge in_progress" title="Trunk: merge in progress">
+            <span class="pulse"></span>
+            <span>Merging</span>
+          </span>`;
+      }
+
+      return `
+        <article class="card ${healthClass(pr)} ${pr.draft ? "draft" : ""}" style="animation-delay:${idx * 35}ms">
+          <div class="card-summary">
+            <div class="card-head">
+              <div class="card-title">
+                <a href="${esc(pr.url)}" target="_blank" rel="noreferrer">${esc(cleanTitle)}</a>
+              </div>
+              <div class="card-tags">${tags.join("")}</div>
+              <i data-lucide="chevron-down" class="chevron"></i>
+            </div>
+            <div class="branch">
+              <button type="button" class="branch-name" data-branch="${esc(pr.branch)}" title="Click to copy">
+                <i data-lucide="git-branch" class="branch-glyph"></i>
+                <span class="branch-text">${esc(pr.branch)}</span>
+                <i data-lucide="copy" class="copy-icon"></i>
+              </button>
+              ${pushMeta ? `<span class="branch-sep">·</span>${pushMeta}` : ""}
+              <span class="branch-sep">·</span>
+              ${sessionMeta}
+              ${trunkBadge ? `<span class="branch-sep">·</span>${trunkBadge}` : ""}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="status-row">
+              <div class="status-block">
+                <div class="status-label">Review</div>
+                <div class="status-value ${review.cls}">
+                  <i data-lucide="${review.icon}" class="icon"></i>
+                  <span>${review.label}</span>
+                </div>
+                <div class="status-meta">
+                  ${pr.approvals} approvals
+                  <span class="sep">·</span>${pr.changes_requested} changes
+                  <span class="sep">·</span>${pr.pending_reviewers} pending
+                </div>
+              </div>
+              <div class="status-block">
+                <div class="status-label">CI Checks</div>
+                <div class="counts">
+                  <div class="gauge ${pr.checks_passing ? "ok" : "zero"}">
+                    <div class="gauge-num">${pad2(pr.checks_passing)}</div>
+                    <div class="gauge-label">Pass</div>
+                  </div>
+                  <div class="gauge ${pr.checks_failing ? "fail" : "zero"}">
+                    <div class="gauge-num">${pad2(pr.checks_failing)}</div>
+                    <div class="gauge-label">Fail</div>
+                  </div>
+                  <div class="gauge ${pr.checks_pending ? "pending" : "zero"}">
+                    <div class="gauge-num">${pad2(pr.checks_pending)}</div>
+                    <div class="gauge-label">Run</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${failing}
+            ${renderSessionsBlock(sessions)}
+          </div>
+        </article>`;
+    }
+
+    const CACHE_KEY = "pr-dash:cache:v1";
+
+    function readCache() {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (!obj || !Array.isArray(obj.prs)) return null;
+        return obj;
+      } catch { return null; }
+    }
+
+    function writeCache(prs) {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ prs, ts: Date.now() }));
+      } catch {}
+    }
+
+    let allPRs = [];
+    let activeFilter = "all";
+
+    function paint(prs) {
+      allPRs = (prs || []).slice().sort(comparePRs);
+      renderFiltered();
+    }
+
+    function renderFiltered() {
+      const prsEl = document.getElementById("prs");
+      const empty = document.getElementById("empty");
+      const summary = document.getElementById("summary");
+
+      if (!allPRs.length) {
+        prsEl.innerHTML = "";
+        summary.style.display = "none";
+        empty.style.display = "block";
+        return;
+      }
+
+      summary.style.display = "grid";
+      const counts = { approved: 0, awaiting: 0, failing: 0 };
+      for (const p of allPRs) counts[BUCKET_NAME[bucket(p)]]++;
+      document.getElementById("sum-total").textContent    = pad2(allPRs.length);
+      document.getElementById("sum-approved").textContent = pad2(counts.approved);
+      document.getElementById("sum-review").textContent   = pad2(counts.awaiting);
+      document.getElementById("sum-failing").textContent  = pad2(counts.failing);
+
+      for (const cell of document.querySelectorAll(".sum-cell")) {
+        cell.classList.toggle("active", cell.dataset.filter === activeFilter);
+      }
+
+      const visible = activeFilter === "all"
+        ? allPRs
+        : allPRs.filter(p => BUCKET_NAME[bucket(p)] === activeFilter);
+
+      if (!visible.length) {
+        empty.style.display = "block";
+        prsEl.innerHTML = "";
+      } else {
+        empty.style.display = "none";
+        prsEl.innerHTML = visible.map(renderPR).join("");
+      }
+      lucide.createIcons();
+    }
+
+    let loading = false;
+
+    async function load() {
+      if (loading) return;
+      loading = true;
+      const spinWrap = document.getElementById("refresh-spin");
+      const statusLine = document.getElementById("status-line");
+      const errorBox = document.getElementById("error");
+
+      spinWrap.classList.add("spin");
+      statusLine.innerHTML = `<span class="pending">// FETCHING ·</span> gh + bk <span class="pending">//</span>`;
+      errorBox.style.display = "none";
+
+      try {
+        const res = await fetch("/api/prs");
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+
+        const prs = data.prs || [];
+        paint(prs);
+        writeCache(prs);
+
+        const t = new Date().toTimeString().slice(0, 8);
+        statusLine.innerHTML = `<span class="ok">// SYNC OK ·</span> ${t} <span class="ok">//</span>`;
+      } catch (e) {
+        statusLine.innerHTML = `<span class="fail">// ERROR //</span>`;
+        errorBox.textContent = `Error: ${e.message}`;
+        errorBox.style.display = "block";
+      } finally {
+        spinWrap.classList.remove("spin");
+        loading = false;
+      }
+    }
+
+    document.getElementById("refresh").addEventListener("click", load);
+    document.getElementById("expand-all").addEventListener("click", () => {
+      for (const card of document.querySelectorAll("#prs .card")) card.classList.add("expanded");
+    });
+    document.getElementById("collapse-all").addEventListener("click", () => {
+      for (const card of document.querySelectorAll("#prs .card")) card.classList.remove("expanded");
+    });
+
+    // The always-visible "summary" region (title + branch + session meta) toggles expand.
+    // The body (status row, failing checks, sessions) must stay non-clickable so users
+    // can select and copy text. Branch-name copy buttons handle their own click.
+    document.getElementById("prs").addEventListener("click", (e) => {
+      if (e.target.closest("a")) return;
+      const branchBtn = e.target.closest(".branch-name");
+      if (branchBtn) {
+        e.stopPropagation();
+        copyBranch(branchBtn);
+        return;
+      }
+      const summary = e.target.closest(".card-summary");
+      if (!summary) return;
+      const card = summary.closest(".card");
+      if (card) card.classList.toggle("expanded");
+    });
+
+    async function copyBranch(btn) {
+      const text = btn.dataset.branch || "";
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // Clipboard API can fail in non-secure contexts; fall back to a textarea hack.
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch {}
+        document.body.removeChild(ta);
+      }
+      btn.classList.remove("copied");
+      // Force a reflow so the animation restarts on repeated clicks.
+      void btn.offsetWidth;
+      btn.classList.add("copied");
+      setTimeout(() => btn.classList.remove("copied"), 1300);
+    }
+
+    // Summary cells filter by bucket. Click again to clear.
+    document.getElementById("summary").addEventListener("click", (e) => {
+      const cell = e.target.closest("[data-filter]");
+      if (!cell) return;
+      const f = cell.dataset.filter;
+      activeFilter = (activeFilter === f && f !== "all") ? "all" : f;
+      renderFiltered();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.altKey
+          && (document.activeElement === document.body || document.activeElement.tagName === "BUTTON")) {
+        e.preventDefault();
+        load();
+      }
+    });
+
+    lucide.createIcons();
+
+    // Paint cached data instantly (no spinner, no skeleton flash) before kicking off background refresh.
+    const cached = readCache();
+    if (cached) {
+      paint(cached.prs);
+      const t = new Date(cached.ts).toTimeString().slice(0, 8);
+      document.getElementById("status-line").innerHTML =
+        `<span class="dim">// CACHED ·</span> ${t} <span class="dim">//</span>`;
+    }
+    load();
+  </script>
+</body>
+</html>
