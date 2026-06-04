@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import sqlite3
 import sys
 from datetime import date as _today_date
 from datetime import timedelta
@@ -36,7 +35,9 @@ CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 BK_URL_RE = re.compile(r"buildkite\.com/([^/]+)/([^/]+)/builds/(\d+)")
 
-CLAUDE_DB = Path.home() / ".claude" / "usage.db"
+# Exact per-session Claude cost, written by the statusline command (the only
+# place the harness exposes total_cost_usd). One JSON file per session.
+CLAUDE_COST_STATE = Path.home() / ".claude" / "cost-state"
 CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
 
 _CLAUDE_PRICING: dict[str, dict[str, float]] = {
@@ -64,51 +65,44 @@ def _codex_session_cost(total_input: int, cached_input: int, output: int) -> flo
     return (non_cached * _CODEX_PRICING["input"] + cached_input * _CODEX_PRICING["cached_input"] + output * _CODEX_PRICING["output"]) / 1_000_000
 
 
-def _db_is_current() -> bool:
-    """True if usage.db exists and has entries within the last 30 days."""
-    if not CLAUDE_DB.exists():
-        return False
-    try:
-        conn = sqlite3.connect(str(CLAUDE_DB))
-        try:
-            row = conn.execute(
-                "SELECT 1 FROM turns WHERE timestamp >= date('now', '-30 days') LIMIT 1"
-            ).fetchone()
-            return row is not None
-        finally:
-            conn.close()
-    except Exception:
-        return False
+def _claude_exact_spend() -> tuple[dict[str, float], set[str]]:
+    """Exact spend from statusline-written ~/.claude/cost-state/<sid>.json.
 
-
-def _claude_spend_from_db() -> dict[str, float]:
-    conn = sqlite3.connect(str(CLAUDE_DB))
-    try:
-        rows = conn.execute("""
-            SELECT
-                substr(timestamp, 1, 10) AS day,
-                model,
-                COALESCE(SUM(input_tokens), 0),
-                COALESCE(SUM(output_tokens), 0),
-                COALESCE(SUM(cache_read_tokens), 0),
-                COALESCE(SUM(cache_creation_tokens), 0)
-            FROM turns
-            WHERE timestamp >= date('now', '-30 days')
-            GROUP BY day, model
-        """).fetchall()
-    finally:
-        conn.close()
+    Each file holds the final cumulative total_cost_usd for one session, so just
+    sum by date. Returns (by_date, exact_sids) — exact_sids lets the JSONL
+    estimator skip sessions we already have an exact figure for (no double count).
+    """
+    if not CLAUDE_COST_STATE.is_dir():
+        return {}, set()
+    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
     by_date: dict[str, float] = {}
-    for day, model, inp, out, cr, cw in rows:
-        by_date[day] = by_date.get(day, 0.0) + _claude_turn_cost(model or "sonnet", inp, out, cr, cw)
-    return by_date
+    exact_sids: set[str] = set()
+    for f in CLAUDE_COST_STATE.glob("*.json"):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            sid = d.get("session_id") or f.stem
+            day = d.get("date", "")
+            cost = float(d.get("cost_usd") or 0)
+        except (json.JSONDecodeError, ValueError, OSError):
+            continue
+        exact_sids.add(sid)
+        if day and day >= cutoff:
+            by_date[day] = by_date.get(day, 0.0) + cost
+    return by_date, exact_sids
 
 
-def _claude_spend_from_jsonl() -> dict[str, float]:
-    """Fallback: read assistant turns directly from ~/.claude/projects/**/*.jsonl."""
+def _claude_spend_from_jsonl(exclude_sids: set[str] | None = None) -> dict[str, float]:
+    """Estimate spend from ~/.claude/projects/**/*.jsonl token usage.
+
+    Sessions in exclude_sids (filename stem == session_id) are skipped — they
+    already have an exact figure from cost-state.
+    """
+    exclude_sids = exclude_sids or set()
     cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
     by_date: dict[str, float] = {}
     for jsonl in CLAUDE_PROJECTS_DIR.glob("*/*.jsonl"):
+        if jsonl.stem in exclude_sids:
+            continue
         try:
             with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
                 for raw in fh:
@@ -139,10 +133,16 @@ def _claude_spend_from_jsonl() -> dict[str, float]:
 
 
 def get_claude_daily_spend() -> dict[str, float]:
-    """Return {date_str: cost_usd} for last 30 days. Uses usage.db when current, else JSONL."""
-    if _db_is_current():
-        return _claude_spend_from_db()
-    return _claude_spend_from_jsonl()
+    """Return {date_str: cost_usd} for last 30 days.
+
+    Exact cost-state figures (statusline) per session, plus JSONL token estimates
+    for any session without an exact figure (e.g. pre-cost-state history).
+    """
+    exact_by_date, exact_sids = _claude_exact_spend()
+    by_date = _claude_spend_from_jsonl(exclude_sids=exact_sids)
+    for day, cost in exact_by_date.items():
+        by_date[day] = by_date.get(day, 0.0) + cost
+    return by_date
 
 
 def get_codex_daily_spend() -> dict[str, float]:
