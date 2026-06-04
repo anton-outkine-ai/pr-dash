@@ -1107,7 +1107,7 @@
       const prEls = ["error", "summary", "prs", "empty"];
       const spendEls = ["spend-view"];
       for (const id of prEls)   document.getElementById(id).style.display = name === "prs"   ? "" : "none";
-      for (const id of spendEls) document.getElementById(id).style.display = name === "spend" ? "" : "none";
+      for (const id of spendEls) { const el = document.getElementById(id); if (el) el.style.display = name === "spend" ? "" : "none"; }
       if (name === "spend" && !spendLoaded) loadSpend();
     }
 
