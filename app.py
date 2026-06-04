@@ -64,10 +64,24 @@ def _codex_session_cost(total_input: int, cached_input: int, output: int) -> flo
     return (non_cached * _CODEX_PRICING["input"] + cached_input * _CODEX_PRICING["cached_input"] + output * _CODEX_PRICING["output"]) / 1_000_000
 
 
-def get_claude_daily_spend() -> dict[str, float]:
-    """Return {date_str: cost_usd} for last 30 days from ~/.claude/usage.db."""
+def _db_is_current() -> bool:
+    """True if usage.db exists and has entries within the last 30 days."""
     if not CLAUDE_DB.exists():
-        return {}
+        return False
+    try:
+        conn = sqlite3.connect(str(CLAUDE_DB))
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM turns WHERE timestamp >= date('now', '-30 days') LIMIT 1"
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def _claude_spend_from_db() -> dict[str, float]:
     conn = sqlite3.connect(str(CLAUDE_DB))
     try:
         rows = conn.execute("""
@@ -84,11 +98,51 @@ def get_claude_daily_spend() -> dict[str, float]:
         """).fetchall()
     finally:
         conn.close()
-
     by_date: dict[str, float] = {}
     for day, model, inp, out, cr, cw in rows:
         by_date[day] = by_date.get(day, 0.0) + _claude_turn_cost(model or "sonnet", inp, out, cr, cw)
     return by_date
+
+
+def _claude_spend_from_jsonl() -> dict[str, float]:
+    """Fallback: read assistant turns directly from ~/.claude/projects/**/*.jsonl."""
+    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
+    by_date: dict[str, float] = {}
+    for jsonl in CLAUDE_PROJECTS_DIR.glob("*/*.jsonl"):
+        try:
+            with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    if '"assistant"' not in raw:
+                        continue
+                    try:
+                        d = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if d.get("type") != "assistant":
+                        continue
+                    ts = d.get("timestamp", "")
+                    day = ts[:10]
+                    if not day or day < cutoff:
+                        continue
+                    msg = d.get("message") or {}
+                    model = msg.get("model") or "sonnet"
+                    usage = msg.get("usage") or {}
+                    inp = usage.get("input_tokens", 0)
+                    out = usage.get("output_tokens", 0)
+                    cr  = usage.get("cache_read_input_tokens", 0)
+                    cw  = usage.get("cache_creation_input_tokens", 0)
+                    cost = _claude_turn_cost(model, inp, out, cr, cw)
+                    by_date[day] = by_date.get(day, 0.0) + cost
+        except OSError:
+            continue
+    return by_date
+
+
+def get_claude_daily_spend() -> dict[str, float]:
+    """Return {date_str: cost_usd} for last 30 days. Uses usage.db when current, else JSONL."""
+    if _db_is_current():
+        return _claude_spend_from_db()
+    return _claude_spend_from_jsonl()
 
 
 def get_codex_daily_spend() -> dict[str, float]:
