@@ -127,6 +127,40 @@
     .btn-compact { padding: 10px 12px; }
     .btn-compact span { font-size: 10px; }
 
+    /* ===== TABS ===== */
+    .tab-bar {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px;
+      position: relative;
+    }
+    .tab-bar::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+      background: linear-gradient(90deg, var(--green) 0%, transparent 18%);
+      opacity: 0.6;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-bottom: 0;
+      color: var(--text-dim);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; font-weight: 500;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      padding: 10px 20px;
+      cursor: pointer;
+      margin-right: 4px;
+      margin-bottom: -1px;
+      transition: color 0.12s ease, background 0.12s ease;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface); }
+    .tab-btn.active {
+      color: var(--green);
+      background: var(--surface);
+      border-color: var(--border);
+      border-bottom-color: var(--surface);
+    }
+
     /* ===== SUMMARY ===== */
     .summary {
       display: grid;
@@ -591,6 +625,11 @@
         </button>
       </div>
     </header>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="prs">Open PRs</button>
+      <button class="tab-btn" data-tab="spend">AI Spend</button>
+    </div>
 
     <div id="error" class="error" style="display:none"></div>
 
@@ -1060,6 +1099,22 @@
     });
 
     lucide.createIcons();
+
+    function switchTab(name) {
+      for (const btn of document.querySelectorAll(".tab-btn")) {
+        btn.classList.toggle("active", btn.dataset.tab === name);
+      }
+      const prEls = ["error", "summary", "prs", "empty"];
+      const spendEls = ["spend-view"];
+      for (const id of prEls)   document.getElementById(id).style.display = name === "prs"   ? "" : "none";
+      for (const id of spendEls) document.getElementById(id).style.display = name === "spend" ? "" : "none";
+      if (name === "spend" && !spendLoaded) loadSpend();
+    }
+
+    document.querySelector(".tab-bar").addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab-btn");
+      if (btn) switchTab(btn.dataset.tab);
+    });
 
     // Paint cached data instantly (no spinner, no skeleton flash) before kicking off background refresh.
     const cached = readCache();
