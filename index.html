@@ -1190,6 +1190,7 @@
     let spendLoaded = false;
 
     function fmtUSD(v) {
+      if (v === 0)   return "$0";
       if (v >= 100)  return "$" + v.toFixed(0);
       if (v >= 10)   return "$" + v.toFixed(1);
       if (v >= 1)    return "$" + v.toFixed(2);
@@ -1263,10 +1264,11 @@
         const res = await fetch("/api/spend");
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-        renderSpend(data.days || []);
+        if (!Array.isArray(data.days)) throw new Error("unexpected response shape");
+        renderSpend(data.days);
       } catch (e) {
-        document.getElementById("spend-view").innerHTML +=
-          `<div class="error">Error loading spend data: ${esc(e.message)}</div>`;
+        document.getElementById("spend-view").insertAdjacentHTML("beforeend",
+          `<div class="error">Error loading spend data: ${esc(e.message)}</div>`);
         spendLoaded = true;
       }
     }
