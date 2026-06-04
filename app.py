@@ -33,6 +33,105 @@ CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 BK_URL_RE = re.compile(r"buildkite\.com/([^/]+)/([^/]+)/builds/(\d+)")
 
+CLAUDE_DB = Path.home() / ".claude" / "usage.db"
+CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
+
+_CLAUDE_PRICING: dict[str, dict[str, float]] = {
+    "opus":   {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25},
+    "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
+    "haiku":  {"input": 0.80, "output":  4.00, "cache_read": 0.08, "cache_write": 1.00},
+}
+_CODEX_PRICING = {"input": 5.00, "output": 30.00, "cached_input": 1.25}
+
+
+def _model_tier(model: str) -> str:
+    m = model.lower()
+    if "opus" in m:   return "opus"
+    if "haiku" in m:  return "haiku"
+    return "sonnet"
+
+
+def _claude_turn_cost(model: str, inp: int, out: int, cr: int, cw: int) -> float:
+    p = _CLAUDE_PRICING[_model_tier(model)]
+    return (inp * p["input"] + out * p["output"] + cr * p["cache_read"] + cw * p["cache_write"]) / 1_000_000
+
+
+def _codex_session_cost(total_input: int, cached_input: int, output: int) -> float:
+    non_cached = max(0, total_input - cached_input)
+    return (non_cached * _CODEX_PRICING["input"] + cached_input * _CODEX_PRICING["cached_input"] + output * _CODEX_PRICING["output"]) / 1_000_000
+
+
+def get_claude_daily_spend() -> dict[str, float]:
+    """Return {date_str: cost_usd} for last 30 days from ~/.claude/usage.db."""
+    if not CLAUDE_DB.exists():
+        return {}
+    import sqlite3
+    conn = sqlite3.connect(str(CLAUDE_DB))
+    try:
+        rows = conn.execute("""
+            SELECT
+                substr(timestamp, 1, 10) AS day,
+                model,
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0),
+                COALESCE(SUM(cache_read_tokens), 0),
+                COALESCE(SUM(cache_creation_tokens), 0)
+            FROM turns
+            WHERE timestamp >= date('now', '-30 days')
+            GROUP BY day, model
+        """).fetchall()
+    finally:
+        conn.close()
+
+    by_date: dict[str, float] = {}
+    for day, model, inp, out, cr, cw in rows:
+        by_date[day] = by_date.get(day, 0.0) + _claude_turn_cost(model or "sonnet", inp, out, cr, cw)
+    return by_date
+
+
+def get_codex_daily_spend() -> dict[str, float]:
+    """Return {date_str: cost_usd} for last 30 days from ~/.codex/sessions/."""
+    if not CODEX_SESSIONS_DIR.exists():
+        return {}
+
+    by_date: dict[str, float] = {}
+    for jsonl in CODEX_SESSIONS_DIR.glob("*/*/*.jsonl"):
+        parts = jsonl.parts
+        # Path structure: .../sessions/YYYY/MM/DD/rollout-....jsonl
+        try:
+            date = f"{parts[-4]}-{parts[-3]}-{parts[-2]}"
+        except IndexError:
+            continue
+
+        last_usage: dict | None = None
+        try:
+            with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    if "token_count" not in raw:
+                        continue
+                    try:
+                        d = json.loads(raw)
+                        if (d.get("type") == "event_msg"
+                                and isinstance(d.get("payload"), dict)
+                                and d["payload"].get("type") == "token_count"):
+                            last_usage = d["payload"]["info"]["total_token_usage"]
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        continue
+        except OSError:
+            continue
+
+        if last_usage is None:
+            continue
+
+        cost = _codex_session_cost(
+            last_usage.get("input_tokens", 0),
+            last_usage.get("cached_input_tokens", 0),
+            last_usage.get("output_tokens", 0),
+        )
+        by_date[date] = by_date.get(date, 0.0) + cost
+    return by_date
+
+
 # Cache: path -> (mtime, summary) so we re-parse a session file only when it changes.
 _SESSION_CACHE: dict[str, tuple[float, dict]] = {}
 
@@ -380,6 +479,25 @@ async def api_prs() -> JSONResponse:
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"prs": prs})
+
+
+@app.get("/api/spend")
+async def api_spend() -> JSONResponse:
+    try:
+        claude_data, codex_data = await asyncio.gather(
+            asyncio.to_thread(get_claude_daily_spend),
+            asyncio.to_thread(get_codex_daily_spend),
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    all_dates = sorted(set(claude_data) | set(codex_data))
+    # Last 30 calendar days only.
+    days = [
+        {"date": d, "claude": round(claude_data.get(d, 0.0), 6), "codex": round(codex_data.get(d, 0.0), 6)}
+        for d in all_dates[-30:]
+    ]
+    return JSONResponse({"days": days})
 
 
 def main() -> None:
