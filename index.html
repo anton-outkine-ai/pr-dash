@@ -571,6 +571,61 @@
     }
     .empty .glyph { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
 
+    /* ===== SPEND VIEW ===== */
+    .spend-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      margin-bottom: 28px;
+    }
+    .spend-cell {
+      padding: 22px 22px 18px;
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .spend-cell:last-child { border-right: 0; }
+    .spend-num {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 36px; font-weight: 600;
+      letter-spacing: -0.02em; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .spend-label {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .spend-sub {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px; color: var(--text-dim);
+    }
+
+    .chart-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 24px 24px 16px;
+      margin-bottom: 16px;
+    }
+    .chart-legend {
+      display: flex; gap: 20px; margin-bottom: 16px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .chart-legend .swatch {
+      display: inline-block; width: 10px; height: 10px; margin-right: 6px;
+      vertical-align: middle;
+    }
+    .chart-svg { width: 100%; display: block; }
+    .spend-note {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px; color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-align: center;
+      padding: 8px 0 4px;
+    }
+
     /* ===== INITIAL LOADING ===== */
     .skeleton {
       height: 96px;
@@ -660,6 +715,38 @@
     <div id="empty" class="empty" style="display:none">
       <div class="glyph">/ /</div>
       <div>NO OPEN PRS</div>
+    </div>
+
+    <div id="spend-view" style="display:none">
+      <div class="spend-summary">
+        <div class="spend-cell">
+          <div class="spend-num" id="spend-claude-total">--</div>
+          <div class="spend-label">Claude (30d)</div>
+          <div class="spend-sub" id="spend-claude-sub">API-rate estimate</div>
+        </div>
+        <div class="spend-cell">
+          <div class="spend-num" id="spend-codex-total">--</div>
+          <div class="spend-label">Codex (30d)</div>
+          <div class="spend-sub" id="spend-codex-sub">API-rate estimate</div>
+        </div>
+        <div class="spend-cell">
+          <div class="spend-num" id="spend-grand-total">--</div>
+          <div class="spend-label">Total (30d)</div>
+          <div class="spend-sub">Combined</div>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart-legend">
+          <span><span class="swatch" style="background:var(--blue)"></span>Claude</span>
+          <span><span class="swatch" style="background:var(--amber)"></span>Codex</span>
+        </div>
+        <svg id="spend-chart" class="chart-svg" viewBox="0 0 960 220" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="spend-note">
+        Estimated from published API pricing · actual subscription charges differ · Claude: Sonnet $3/$15, Opus $5/$25 per M tokens · Codex (gpt-5.5): $5/$30 per M tokens
+      </div>
     </div>
   </div>
 
@@ -1099,6 +1186,90 @@
     });
 
     lucide.createIcons();
+
+    let spendLoaded = false;
+
+    function fmtUSD(v) {
+      if (v >= 100)  return "$" + v.toFixed(0);
+      if (v >= 10)   return "$" + v.toFixed(1);
+      if (v >= 1)    return "$" + v.toFixed(2);
+      return "$" + v.toFixed(3);
+    }
+
+    function renderSpend(days) {
+      spendLoaded = true;
+      const claudeTotal = days.reduce((s, d) => s + d.claude, 0);
+      const codexTotal  = days.reduce((s, d) => s + d.codex,  0);
+      const grandTotal  = claudeTotal + codexTotal;
+
+      document.getElementById("spend-claude-total").textContent = fmtUSD(claudeTotal);
+      document.getElementById("spend-codex-total").textContent  = fmtUSD(codexTotal);
+      document.getElementById("spend-grand-total").textContent  = fmtUSD(grandTotal);
+
+      // SVG chart — viewBox "0 0 960 220"
+      // Layout: left margin 55 (Y labels), right 5, bottom 32 (X labels), top 8.
+      const ML = 55, MR = 5, MB = 32, MT = 8;
+      const CW = 960 - ML - MR;   // chart inner width
+      const CH = 220 - MB - MT;   // chart inner height
+
+      const N = days.length || 1;
+      const gw = CW / N;           // group width per day
+      const bw = Math.max(2, gw * 0.36); // individual bar width
+      const maxVal = Math.max(...days.map(d => d.claude + d.codex), 0.001);
+
+      // Y grid lines + labels (4 lines)
+      const yTicks = [0.25, 0.5, 0.75, 1.0];
+      const gridLines = yTicks.map(f => {
+        const y = MT + CH * (1 - f);
+        const label = fmtUSD(maxVal * f);
+        return `
+      <line x1="${ML}" y1="${y}" x2="${ML + CW}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>
+      <text x="${ML - 6}" y="${y + 4}" text-anchor="end" fill="var(--text-dim)" font-size="10" font-family="JetBrains Mono,monospace">${esc(label)}</text>`;
+      }).join("");
+
+      // Bars + X labels
+      const bars = days.map((d, i) => {
+        const gx = ML + i * gw;
+        const claudeH = (d.claude / maxVal) * CH;
+        const codexH  = (d.codex  / maxVal) * CH;
+        const cx = gx + gw * 0.1;
+        const dx = cx + bw + 1;
+        const label = d.date.slice(5); // MM-DD
+        const midX = gx + gw / 2;
+
+        const claudeBar = claudeH > 0
+          ? `<rect x="${cx.toFixed(1)}" y="${(MT + CH - claudeH).toFixed(1)}" width="${bw.toFixed(1)}" height="${claudeH.toFixed(1)}" fill="var(--blue)" opacity="0.85"/>`
+          : "";
+        const codexBar = codexH > 0
+          ? `<rect x="${dx.toFixed(1)}" y="${(MT + CH - codexH).toFixed(1)}"  width="${bw.toFixed(1)}" height="${codexH.toFixed(1)}"  fill="var(--amber)" opacity="0.85"/>`
+          : "";
+
+        // Show date label every 5 days to avoid overcrowding
+        const xLabel = (i % 5 === 0 || i === days.length - 1)
+          ? `<text x="${midX.toFixed(1)}" y="${MT + CH + 20}" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-family="JetBrains Mono,monospace">${esc(label)}</text>`
+          : "";
+
+        return claudeBar + codexBar + xLabel;
+      }).join("");
+
+      // Baseline
+      const baseline = `<line x1="${ML}" y1="${MT + CH}" x2="${ML + CW}" y2="${MT + CH}" stroke="var(--border-strong)" stroke-width="1"/>`;
+
+      document.getElementById("spend-chart").innerHTML = gridLines + baseline + bars;
+    }
+
+    async function loadSpend() {
+      try {
+        const res = await fetch("/api/spend");
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        renderSpend(data.days || []);
+      } catch (e) {
+        document.getElementById("spend-view").innerHTML +=
+          `<div class="error">Error loading spend data: ${esc(e.message)}</div>`;
+        spendLoaded = true;
+      }
+    }
 
     function switchTab(name) {
       for (const btn of document.querySelectorAll(".tab-btn")) {
