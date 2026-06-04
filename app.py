@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -28,10 +27,6 @@ from fastapi.responses import FileResponse, JSONResponse
 
 BASE = Path(__file__).parent
 INDEX = BASE / "index.html"
-
-# `gh pr list` resolves the target repo from the working directory's git config.
-# Override with PR_DASH_REPO=/path/to/some/repo if your PRs live elsewhere.
-REPO_DIR = os.environ.get("PR_DASH_REPO") or str(Path.home() / "code" / "core-stack")
 
 # Claude Code stores per-session transcripts as jsonl under ~/.claude/projects/<slug>/<sid>.jsonl.
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
@@ -286,6 +281,7 @@ async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task], sessio
         "number": pr["number"],
         "title": pr["title"],
         "url": pr["url"],
+        "repo": pr.get("_repo"),
         "branch": pr["headRefName"],
         "draft": bool(pr.get("isDraft")),
         "review_decision": pr.get("reviewDecision") or "",
@@ -305,20 +301,35 @@ async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task], sessio
 
 
 async def fetch_prs() -> list[dict]:
+    # `gh search prs` works across every org/repo the user can see — no cwd dependency.
+    # It only returns a thin set of fields, so we fan out to `gh pr view --repo ...` below
+    # to fetch the rich data the dashboard renders (checks, reviews, comments, commits).
     rc, out, err = await run_cmd(
-        "gh", "pr", "list",
+        "gh", "search", "prs",
         "--author", "@me",
         "--state", "open",
         "--limit", "100",
-        "--json",
-        "number,title,url,headRefName,isDraft,reviewDecision,latestReviews,reviewRequests,statusCheckRollup,updatedAt,createdAt",
-        cwd=REPO_DIR,
+        "--json", "number,url,repository",
     )
     if rc != 0:
-        raise RuntimeError(
-            f"gh pr list failed (cwd={REPO_DIR}): {err.strip()}"
-        )
-    prs = json.loads(out)
+        raise RuntimeError(f"gh search prs failed: {err.strip()}")
+    hits = json.loads(out)
+
+    refs = []
+    for h in hits:
+        repo = (h.get("repository") or {}).get("nameWithOwner")
+        if not repo:
+            continue
+        refs.append({"repo": repo, "number": h["number"], "url": h.get("url")})
+
+    detail_tasks = [asyncio.create_task(fetch_pr_full(r["repo"], r["number"])) for r in refs]
+    prs: list[dict] = []
+    for ref, task in zip(refs, detail_tasks):
+        pr = await task
+        if not pr:
+            continue
+        pr["_repo"] = ref["repo"]
+        prs.append(pr)
 
     bk_targets: set[tuple[str, str]] = set()
     for pr in prs:
@@ -332,32 +343,29 @@ async def fetch_prs() -> list[dict]:
     bk_cache = {key: asyncio.create_task(fetch_buildkite(*key)) for key in bk_targets}
     session_index = await asyncio.to_thread(build_session_index)
 
-    # Per-PR detail fetch in parallel. We can't include `comments` or `commits` in the
-    # list query because together they push the GraphQL node count past the 500k limit
-    # (100 PRs × N comments × author connections explodes).
-    detail_tasks = {pr["number"]: asyncio.create_task(fetch_pr_details(pr["number"]))
-                    for pr in prs}
-    for pr in prs:
-        details = await detail_tasks[pr["number"]]
-        pr["_comments"] = details.get("comments") or []
-        pr["_commits"] = details.get("commits") or []
-
     enriched = await asyncio.gather(*(enrich(pr, bk_cache, session_index) for pr in prs))
     return list(enriched)
 
 
-async def fetch_pr_details(number: int) -> dict:
-    rc, out, err = await run_cmd(
+async def fetch_pr_full(repo: str, number: int) -> dict:
+    rc, out, _ = await run_cmd(
         "gh", "pr", "view", str(number),
-        "--json", "comments,commits",
-        cwd=REPO_DIR,
+        "--repo", repo,
+        "--json",
+        "number,title,url,headRefName,isDraft,reviewDecision,latestReviews,reviewRequests,"
+        "statusCheckRollup,updatedAt,createdAt,comments,commits",
     )
     if rc != 0:
         return {}
     try:
-        return json.loads(out)
+        data = json.loads(out)
     except json.JSONDecodeError:
         return {}
+    # enrich() reads these under the `_comments` / `_commits` keys (kept separate so the
+    # raw GraphQL response doesn't leak into the API output).
+    data["_comments"] = data.pop("comments", []) or []
+    data["_commits"] = data.pop("commits", []) or []
+    return data
 
 
 @app.get("/")
