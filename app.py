@@ -95,7 +95,7 @@ def get_codex_daily_spend() -> dict[str, float]:
         return {}
 
     by_date: dict[str, float] = {}
-    for jsonl in CODEX_SESSIONS_DIR.glob("*/*/*.jsonl"):
+    for jsonl in CODEX_SESSIONS_DIR.glob("*/*/*/*.jsonl"):
         parts = jsonl.parts
         # Path structure: .../sessions/YYYY/MM/DD/rollout-....jsonl
         try:
