@@ -40,24 +40,7 @@ BK_URL_RE = re.compile(r"buildkite\.com/([^/]+)/([^/]+)/builds/(\d+)")
 CLAUDE_COST_STATE = Path.home() / ".claude" / "cost-state"
 CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
 
-_CLAUDE_PRICING: dict[str, dict[str, float]] = {
-    "opus":   {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25},
-    "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "haiku":  {"input": 0.80, "output":  4.00, "cache_read": 0.08, "cache_write": 1.00},
-}
 _CODEX_PRICING = {"input": 5.00, "output": 30.00, "cached_input": 1.25}
-
-
-def _model_tier(model: str) -> str:
-    m = model.lower()
-    if "opus" in m:   return "opus"
-    if "haiku" in m:  return "haiku"
-    return "sonnet"
-
-
-def _claude_turn_cost(model: str, inp: int, out: int, cr: int, cw: int) -> float:
-    p = _CLAUDE_PRICING[_model_tier(model)]
-    return (inp * p["input"] + out * p["output"] + cr * p["cache_read"] + cw * p["cache_write"]) / 1_000_000
 
 
 def _codex_session_cost(total_input: int, cached_input: int, output: int) -> float:
@@ -65,83 +48,21 @@ def _codex_session_cost(total_input: int, cached_input: int, output: int) -> flo
     return (non_cached * _CODEX_PRICING["input"] + cached_input * _CODEX_PRICING["cached_input"] + output * _CODEX_PRICING["output"]) / 1_000_000
 
 
-def _claude_exact_spend() -> tuple[dict[str, float], set[str]]:
-    """Exact spend from statusline-written ~/.claude/cost-state/<sid>.json.
-
-    Each file holds the final cumulative total_cost_usd for one session, so just
-    sum by date. Returns (by_date, exact_sids) — exact_sids lets the JSONL
-    estimator skip sessions we already have an exact figure for (no double count).
-    """
+def get_claude_daily_spend() -> dict[str, float]:
+    """Return {date_str: cost_usd} for last 30 days from ~/.claude/cost-state/<sid>.json."""
     if not CLAUDE_COST_STATE.is_dir():
-        return {}, set()
+        return {}
     cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
     by_date: dict[str, float] = {}
-    exact_sids: set[str] = set()
     for f in CLAUDE_COST_STATE.glob("*.json"):
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
-            sid = d.get("session_id") or f.stem
             day = d.get("date", "")
             cost = float(d.get("cost_usd") or 0)
         except (json.JSONDecodeError, ValueError, OSError):
             continue
-        exact_sids.add(sid)
         if day and day >= cutoff:
             by_date[day] = by_date.get(day, 0.0) + cost
-    return by_date, exact_sids
-
-
-def _claude_spend_from_jsonl(exclude_sids: set[str] | None = None) -> dict[str, float]:
-    """Estimate spend from ~/.claude/projects/**/*.jsonl token usage.
-
-    Sessions in exclude_sids (filename stem == session_id) are skipped — they
-    already have an exact figure from cost-state.
-    """
-    exclude_sids = exclude_sids or set()
-    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
-    by_date: dict[str, float] = {}
-    for jsonl in CLAUDE_PROJECTS_DIR.glob("*/*.jsonl"):
-        if jsonl.stem in exclude_sids:
-            continue
-        try:
-            with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
-                for raw in fh:
-                    if '"assistant"' not in raw:
-                        continue
-                    try:
-                        d = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    if d.get("type") != "assistant":
-                        continue
-                    ts = d.get("timestamp", "")
-                    day = ts[:10]
-                    if not day or day < cutoff:
-                        continue
-                    msg = d.get("message") or {}
-                    model = msg.get("model") or "sonnet"
-                    usage = msg.get("usage") or {}
-                    inp = usage.get("input_tokens", 0)
-                    out = usage.get("output_tokens", 0)
-                    cr  = usage.get("cache_read_input_tokens", 0)
-                    cw  = usage.get("cache_creation_input_tokens", 0)
-                    cost = _claude_turn_cost(model, inp, out, cr, cw)
-                    by_date[day] = by_date.get(day, 0.0) + cost
-        except OSError:
-            continue
-    return by_date
-
-
-def get_claude_daily_spend() -> dict[str, float]:
-    """Return {date_str: cost_usd} for last 30 days.
-
-    Exact cost-state figures (statusline) per session, plus JSONL token estimates
-    for any session without an exact figure (e.g. pre-cost-state history).
-    """
-    exact_by_date, exact_sids = _claude_exact_spend()
-    by_date = _claude_spend_from_jsonl(exclude_sids=exact_sids)
-    for day, cost in exact_by_date.items():
-        by_date[day] = by_date.get(day, 0.0) + cost
     return by_date
 
 
