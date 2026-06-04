@@ -19,7 +19,10 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sqlite3
 import sys
+from datetime import date as _today_date
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -65,7 +68,6 @@ def get_claude_daily_spend() -> dict[str, float]:
     """Return {date_str: cost_usd} for last 30 days from ~/.claude/usage.db."""
     if not CLAUDE_DB.exists():
         return {}
-    import sqlite3
     conn = sqlite3.connect(str(CLAUDE_DB))
     try:
         rows = conn.execute("""
@@ -94,6 +96,7 @@ def get_codex_daily_spend() -> dict[str, float]:
     if not CODEX_SESSIONS_DIR.exists():
         return {}
 
+    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
     by_date: dict[str, float] = {}
     for jsonl in CODEX_SESSIONS_DIR.glob("*/*/*/*.jsonl"):
         parts = jsonl.parts
@@ -101,6 +104,8 @@ def get_codex_daily_spend() -> dict[str, float]:
         try:
             date = f"{parts[-4]}-{parts[-3]}-{parts[-2]}"
         except IndexError:
+            continue
+        if date < cutoff:
             continue
 
         last_usage: dict | None = None
