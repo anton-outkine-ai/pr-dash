@@ -500,7 +500,7 @@ async def api_spend() -> JSONResponse:
     # Last 30 calendar days only.
     days = [
         {"date": d, "claude": round(claude_data.get(d, 0.0), 6), "codex": round(codex_data.get(d, 0.0), 6)}
-        for d in all_dates[-30:]
+        for d in all_dates
     ]
     return JSONResponse({"days": days})
 
