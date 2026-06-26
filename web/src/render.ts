@@ -377,14 +377,14 @@ function failingDetail(pr: PR): HTMLElement {
   list.className = 'card-failing-list'
   for (const check of pr.failing_checks) {
     const li = document.createElement('li')
-    li.textContent = check.name
+    li.appendChild(failingLink(check.name, check.url))
     const jobs = check.buildkite?.failed_jobs ?? []
     if (jobs.length > 0) {
       const sub = document.createElement('ul')
       for (const job of jobs) {
         const jli = document.createElement('li')
         jli.className = 'card-failing-job'
-        jli.textContent = job.name
+        jli.appendChild(failingLink(job.name, job.url))
         sub.appendChild(jli)
       }
       li.appendChild(sub)
@@ -393,6 +393,21 @@ function failingDetail(pr: PR): HTMLElement {
   }
   details.appendChild(list)
   return details
+}
+
+/** Check or Buildkite job name; link when a URL is available. */
+function failingLink(name: string, url: string | null): HTMLElement {
+  if (!url) {
+    const span = document.createElement('span')
+    span.textContent = name
+    return span
+  }
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noreferrer'
+  a.textContent = name
+  return a
 }
 
 /* ----------------------------------------------------------------------- *

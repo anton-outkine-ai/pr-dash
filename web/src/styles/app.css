@@ -339,6 +339,13 @@ body {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.card-failing-list a {
+  color: inherit;
+  text-decoration: none;
+}
+.card-failing-list a:hover {
+  text-decoration: underline;
+}
 .card-failing-job {
   color: var(--text-dim);
   opacity: 0.85;
