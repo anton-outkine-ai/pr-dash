@@ -1,0 +1,154 @@
+/* Minimap, viewport rect, legend/quick-nav, and fit control.
+ * Owned by the canvas agent (separate from app.css). See design spec §9, §12.
+ * Repo-colored elements set --repo-light / --repo-dark inline; the active
+ * shade is selected per theme below so the theme toggle re-tints instantly. */
+
+/* ---- Minimap panel (fixed bottom-right) ---- */
+.minimap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--card-surface);
+  box-shadow: var(--card-shadow);
+  opacity: 0.92;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.minimap:hover {
+  opacity: 1;
+}
+
+.minimap-rect {
+  position: absolute;
+  border-radius: 1px;
+  min-width: 2px;
+  min-height: 2px;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .minimap-rect {
+  background: var(--repo-dark);
+}
+
+:root[data-theme="light"] .minimap-rect {
+  background: var(--repo-light);
+}
+
+/* Translucent outline tracking the live viewport. */
+.minimap-viewport {
+  position: absolute;
+  border: 1.5px solid var(--text-primary);
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* ---- Legend / repo quick-nav (fixed top-right) ---- */
+.legend {
+  position: fixed;
+  /* Pushed below the top-right theme-toggle (38px + 16px) so they don't overlap. */
+  top: 64px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Size to content so full repo names show; cap so it never runs off-screen. */
+  width: max-content;
+  max-width: 360px;
+  padding: 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--card-surface);
+  box-shadow: var(--card-shadow);
+  opacity: 0.95;
+}
+
+.legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.legend-item:hover {
+  background: var(--card-surface-2);
+}
+
+.legend-item:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}
+
+.legend-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  /* Nudge down so the dot lines up with the first line of label text. */
+  margin-top: 3px;
+  border-radius: 50%;
+}
+
+:root[data-theme="dark"] .legend-dot {
+  background: var(--repo-dark);
+}
+
+:root[data-theme="light"] .legend-dot {
+  background: var(--repo-light);
+}
+
+.legend-label {
+  /* Show the full repo name; wrap long names instead of truncating. */
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
+/* ---- Fit control ---- */
+.fit-btn {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: var(--card-surface-2);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fit-btn:hover {
+  border-color: var(--text-dim);
+}
+
+.fit-btn:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minimap,
+  .legend,
+  .legend-item,
+  .fit-btn {
+    transition: none !important;
+  }
+}

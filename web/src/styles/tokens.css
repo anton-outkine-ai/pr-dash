@@ -1,0 +1,39 @@
+/* Theme tokens — see design spec §11.
+ * Theme-independent base tokens (fonts) live in :root.
+ * Per-theme palettes live in :root[data-theme="dark"] / [data-theme="light"]. */
+
+:root {
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-body: 'Hanken Grotesk', sans-serif;
+}
+
+/* Dark "blueprint" */
+:root[data-theme="dark"] {
+  --canvas-bg: #0b0e14;
+  --grid-dot: rgba(120, 150, 200, 0.10);
+  --card-surface: #141925;
+  --card-surface-2: #1c2230;
+  --card-border: #262d3d;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+  --text-primary: #e6e9f0;
+  --text-dim: #8b94a8;
+  --status-ready: #34d399;
+  --status-blocked: #f87171;
+  --status-pending: #fbbf24;
+}
+
+/* Light "whiteboard" */
+:root[data-theme="light"] {
+  --canvas-bg: #f7f8fa;
+  --grid-dot: rgba(40, 50, 75, 0.10);
+  --card-surface: #ffffff;
+  --card-surface-2: #f4f6f9;
+  --card-border: #e3e7ee;
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .08);
+  --text-primary: #1a2233;
+  --text-dim: #5b6680;
+  --status-ready: #15803d;
+  --status-blocked: #dc2626;
+  --status-pending: #d97706;
+}

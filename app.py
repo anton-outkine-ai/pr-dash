@@ -24,17 +24,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).parent
-INDEX = BASE / "index.html"
-
-# Claude Code stores per-session transcripts as jsonl under ~/.claude/projects/<slug>/<sid>.jsonl.
-CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+DIST = BASE / "web" / "dist"
 
 BK_URL_RE = re.compile(r"buildkite\.com/([^/]+)/([^/]+)/builds/(\d+)")
-
-# Cache: path -> (mtime, summary) so we re-parse a session file only when it changes.
-_SESSION_CACHE: dict[str, tuple[float, dict]] = {}
 
 app = FastAPI()
 
@@ -160,97 +155,7 @@ def last_commit_at(commits: list[dict]) -> str | None:
     return last.get("committedDate") or last.get("authoredDate")
 
 
-def _summarize_session_file(path: Path) -> dict | None:
-    """Parse a Claude session jsonl and return a compact summary, or None if empty."""
-    branch: str | None = None
-    title: str | None = None
-    first_ts: str | None = None
-    last_ts: str | None = None
-    user_msgs = 0
-    assistant_msgs = 0
-    cwd: str | None = None
-
-    try:
-        with path.open("r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if not line.strip():
-                    continue
-                try:
-                    d = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                t = d.get("type")
-                if t == "user":
-                    user_msgs += 1
-                elif t == "assistant":
-                    assistant_msgs += 1
-                elif t == "ai-title":
-                    title = d.get("aiTitle") or title
-                if branch is None and d.get("gitBranch"):
-                    branch = d["gitBranch"]
-                if cwd is None and d.get("cwd"):
-                    cwd = d["cwd"]
-                ts = d.get("timestamp")
-                if ts:
-                    if first_ts is None or ts < first_ts:
-                        first_ts = ts
-                    if last_ts is None or ts > last_ts:
-                        last_ts = ts
-    except OSError:
-        return None
-
-    if not branch and user_msgs == 0 and assistant_msgs == 0:
-        return None
-
-    return {
-        "session_id": path.stem,
-        "branch": branch,
-        "title": title,
-        "cwd": cwd,
-        "first_ts": first_ts,
-        "last_ts": last_ts,
-        "user_msgs": user_msgs,
-        "assistant_msgs": assistant_msgs,
-    }
-
-
-def build_session_index() -> dict[str, list[dict]]:
-    """Walk all Claude project dirs, build {branch: [session_summary, ...]} index.
-
-    Uses mtime-keyed cache: a session file is only re-parsed when its mtime changes.
-    """
-    if not CLAUDE_PROJECTS_DIR.exists():
-        return {}
-
-    by_branch: dict[str, list[dict]] = {}
-    for jsonl in CLAUDE_PROJECTS_DIR.glob("*/*.jsonl"):
-        try:
-            mtime = jsonl.stat().st_mtime
-        except OSError:
-            continue
-        key = str(jsonl)
-        cached = _SESSION_CACHE.get(key)
-        if cached and cached[0] == mtime:
-            summary = cached[1]
-        else:
-            summary = _summarize_session_file(jsonl)
-            if summary is None:
-                continue
-            _SESSION_CACHE[key] = (mtime, summary)
-        branch = summary.get("branch")
-        if not branch:
-            continue
-        # Skip sessions with no exchanges (started but never used).
-        if summary.get("user_msgs", 0) == 0 and summary.get("assistant_msgs", 0) == 0:
-            continue
-        by_branch.setdefault(branch, []).append(summary)
-
-    for sessions in by_branch.values():
-        sessions.sort(key=lambda s: s.get("last_ts") or "", reverse=True)
-    return by_branch
-
-
-async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task], session_index: dict[str, list[dict]]) -> dict:
+async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task]) -> dict:
     checks = pr.get("statusCheckRollup") or []
     failing = [c for c in checks if is_failing(c)]
     passing = [c for c in checks if is_passing(c)]
@@ -275,14 +180,13 @@ async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task], sessio
     changes = sum(1 for r in reviews if r.get("state") == "CHANGES_REQUESTED")
     pending_reviewers = len(pr.get("reviewRequests") or [])
 
-    sessions = session_index.get(pr["headRefName"], [])
-
     return {
         "number": pr["number"],
         "title": pr["title"],
         "url": pr["url"],
         "repo": pr.get("_repo"),
         "branch": pr["headRefName"],
+        "base_branch": pr.get("baseRefName"),
         "draft": bool(pr.get("isDraft")),
         "review_decision": pr.get("reviewDecision") or "",
         "approvals": approvals,
@@ -292,7 +196,6 @@ async def enrich(pr: dict, bk_cache: dict[tuple[str, str], asyncio.Task], sessio
         "checks_failing": len(failing),
         "checks_pending": len(pending),
         "failing_checks": failing_out,
-        "claude_sessions": sessions,
         "updated_at": pr.get("updatedAt"),
         "created_at": pr.get("createdAt"),
         "last_commit_at": last_commit_at(pr.get("_commits") or []),
@@ -341,9 +244,8 @@ async def fetch_prs() -> list[dict]:
                 bk_targets.add(key)
 
     bk_cache = {key: asyncio.create_task(fetch_buildkite(*key)) for key in bk_targets}
-    session_index = await asyncio.to_thread(build_session_index)
 
-    enriched = await asyncio.gather(*(enrich(pr, bk_cache, session_index) for pr in prs))
+    enriched = await asyncio.gather(*(enrich(pr, bk_cache) for pr in prs))
     return list(enriched)
 
 
@@ -352,7 +254,7 @@ async def fetch_pr_full(repo: str, number: int) -> dict:
         "gh", "pr", "view", str(number),
         "--repo", repo,
         "--json",
-        "number,title,url,headRefName,isDraft,reviewDecision,latestReviews,reviewRequests,"
+        "number,title,url,headRefName,baseRefName,isDraft,reviewDecision,latestReviews,reviewRequests,"
         "statusCheckRollup,updatedAt,createdAt,comments,commits",
     )
     if rc != 0:
@@ -370,7 +272,7 @@ async def fetch_pr_full(repo: str, number: int) -> dict:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(INDEX)
+    return FileResponse(DIST / "index.html")
 
 
 @app.get("/api/prs")
@@ -380,6 +282,9 @@ async def api_prs() -> JSONResponse:
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"prs": prs})
+
+
+app.mount("/assets", StaticFiles(directory=DIST / "assets", check_dir=False), name="assets")
 
 
 def main() -> None:
