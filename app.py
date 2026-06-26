@@ -20,8 +20,6 @@ import asyncio
 import json
 import re
 import sys
-from datetime import date as _today_date
-from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -34,83 +32,6 @@ INDEX = BASE / "index.html"
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 BK_URL_RE = re.compile(r"buildkite\.com/([^/]+)/([^/]+)/builds/(\d+)")
-
-# Exact per-session Claude cost, written by the statusline command (the only
-# place the harness exposes total_cost_usd). One JSON file per session.
-CLAUDE_COST_STATE = Path.home() / ".claude" / "cost-state"
-CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
-
-_CODEX_PRICING = {"input": 5.00, "output": 30.00, "cached_input": 1.25}
-
-
-def _codex_session_cost(total_input: int, cached_input: int, output: int) -> float:
-    non_cached = max(0, total_input - cached_input)
-    return (non_cached * _CODEX_PRICING["input"] + cached_input * _CODEX_PRICING["cached_input"] + output * _CODEX_PRICING["output"]) / 1_000_000
-
-
-def get_claude_daily_spend() -> dict[str, float]:
-    """Return {date_str: cost_usd} for last 30 days from ~/.claude/cost-state/<sid>.json."""
-    if not CLAUDE_COST_STATE.is_dir():
-        return {}
-    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
-    by_date: dict[str, float] = {}
-    for f in CLAUDE_COST_STATE.glob("*.json"):
-        try:
-            d = json.loads(f.read_text(encoding="utf-8"))
-            day = d.get("date", "")
-            cost = float(d.get("cost_usd") or 0)
-        except (json.JSONDecodeError, ValueError, OSError):
-            continue
-        if day and day >= cutoff:
-            by_date[day] = by_date.get(day, 0.0) + cost
-    return by_date
-
-
-def get_codex_daily_spend() -> dict[str, float]:
-    """Return {date_str: cost_usd} for last 30 days from ~/.codex/sessions/."""
-    if not CODEX_SESSIONS_DIR.exists():
-        return {}
-
-    cutoff = (_today_date.today() - timedelta(days=30)).isoformat()
-    by_date: dict[str, float] = {}
-    for jsonl in CODEX_SESSIONS_DIR.glob("*/*/*/*.jsonl"):
-        parts = jsonl.parts
-        # Path structure: .../sessions/YYYY/MM/DD/rollout-....jsonl
-        try:
-            date = f"{parts[-4]}-{parts[-3]}-{parts[-2]}"
-        except IndexError:
-            continue
-        if date < cutoff:
-            continue
-
-        last_usage: dict | None = None
-        try:
-            with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
-                for raw in fh:
-                    if "token_count" not in raw:
-                        continue
-                    try:
-                        d = json.loads(raw)
-                        if (d.get("type") == "event_msg"
-                                and isinstance(d.get("payload"), dict)
-                                and d["payload"].get("type") == "token_count"):
-                            last_usage = d["payload"]["info"]["total_token_usage"]
-                    except (json.JSONDecodeError, KeyError, TypeError):
-                        continue
-        except OSError:
-            continue
-
-        if last_usage is None:
-            continue
-
-        cost = _codex_session_cost(
-            last_usage.get("input_tokens", 0),
-            last_usage.get("cached_input_tokens", 0),
-            last_usage.get("output_tokens", 0),
-        )
-        by_date[date] = by_date.get(date, 0.0) + cost
-    return by_date
-
 
 # Cache: path -> (mtime, summary) so we re-parse a session file only when it changes.
 _SESSION_CACHE: dict[str, tuple[float, dict]] = {}
@@ -459,25 +380,6 @@ async def api_prs() -> JSONResponse:
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"prs": prs})
-
-
-@app.get("/api/spend")
-async def api_spend() -> JSONResponse:
-    try:
-        claude_data, codex_data = await asyncio.gather(
-            asyncio.to_thread(get_claude_daily_spend),
-            asyncio.to_thread(get_codex_daily_spend),
-        )
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-    all_dates = sorted(set(claude_data) | set(codex_data))
-    # Last 30 calendar days only.
-    days = [
-        {"date": d, "claude": round(claude_data.get(d, 0.0), 6), "codex": round(codex_data.get(d, 0.0), 6)}
-        for d in all_dates
-    ]
-    return JSONResponse({"days": days})
 
 
 def main() -> None:

@@ -127,40 +127,6 @@
     .btn-compact { padding: 10px 12px; }
     .btn-compact span { font-size: 10px; }
 
-    /* ===== TABS ===== */
-    .tab-bar {
-      display: flex; gap: 0;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 28px;
-      position: relative;
-    }
-    .tab-bar::after {
-      content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-      background: linear-gradient(90deg, var(--green) 0%, transparent 18%);
-      opacity: 0.6;
-    }
-    .tab-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      border-bottom: 0;
-      color: var(--text-dim);
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px; font-weight: 500;
-      letter-spacing: 0.2em; text-transform: uppercase;
-      padding: 10px 20px;
-      cursor: pointer;
-      margin-right: 4px;
-      margin-bottom: -1px;
-      transition: color 0.12s ease, background 0.12s ease;
-    }
-    .tab-btn:hover { color: var(--text); background: var(--surface); }
-    .tab-btn.active {
-      color: var(--green);
-      background: var(--surface);
-      border-color: var(--border);
-      border-bottom-color: var(--surface);
-    }
-
     /* ===== SUMMARY ===== */
     .summary {
       display: grid;
@@ -571,89 +537,6 @@
     }
     .empty .glyph { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
 
-    /* ===== SPEND VIEW ===== */
-    .spend-summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      margin-bottom: 28px;
-    }
-    .spend-cell {
-      padding: 22px 22px 18px;
-      border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; gap: 6px;
-    }
-    .spend-cell:last-child { border-right: 0; }
-    .spend-num {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 36px; font-weight: 600;
-      letter-spacing: -0.02em; line-height: 1;
-      font-variant-numeric: tabular-nums;
-    }
-    .spend-label {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-      color: var(--text-dim);
-    }
-    .spend-sub {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 11px; color: var(--text-dim);
-    }
-
-    .chart-wrap {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      padding: 24px 24px 16px;
-      margin-bottom: 16px;
-    }
-    .chart-legend {
-      display: flex; gap: 20px; margin-bottom: 16px;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-      color: var(--text-dim);
-    }
-    .chart-legend .swatch {
-      display: inline-block; width: 10px; height: 10px; margin-right: 6px;
-      vertical-align: middle;
-    }
-    .chart-svg { width: 100%; display: block; }
-    .spend-note {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px; color: var(--text-dim);
-      letter-spacing: 0.08em;
-      text-align: center;
-      padding: 8px 0 4px;
-    }
-    .month-filter {
-      display: flex; gap: 6px; flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-    .month-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-dim);
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-      padding: 5px 12px; cursor: pointer;
-      transition: color 0.12s, background 0.12s;
-    }
-    .month-btn:hover { color: var(--text); background: var(--surface-2); }
-    .month-btn.active { color: var(--green); border-color: var(--green-dim); background: var(--surface); }
-    #spend-tooltip {
-      position: fixed;
-      background: var(--surface-2);
-      border: 1px solid var(--border-strong);
-      padding: 8px 12px;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 11px; line-height: 1.7;
-      color: var(--text);
-      pointer-events: none;
-      display: none;
-      z-index: 200;
-      white-space: nowrap;
-    }
-
     /* ===== INITIAL LOADING ===== */
     .skeleton {
       height: 96px;
@@ -709,11 +592,6 @@
       </div>
     </header>
 
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="prs">Open PRs</button>
-      <button class="tab-btn" data-tab="spend">AI Spend</button>
-    </div>
-
     <div id="error" class="error" style="display:none"></div>
 
     <div id="summary" class="summary" style="display:none">
@@ -743,39 +621,6 @@
     <div id="empty" class="empty" style="display:none">
       <div class="glyph">/ /</div>
       <div>NO OPEN PRS</div>
-    </div>
-
-    <div id="spend-view" style="display:none">
-      <div class="spend-summary">
-        <div class="spend-cell">
-          <div class="spend-num" id="spend-claude-total">--</div>
-          <div class="spend-label">Claude (30d)</div>
-          <div class="spend-sub" id="spend-claude-sub">harness-exact</div>
-        </div>
-        <div class="spend-cell">
-          <div class="spend-num" id="spend-codex-total">--</div>
-          <div class="spend-label">Codex (30d)</div>
-          <div class="spend-sub" id="spend-codex-sub">API-rate estimate</div>
-        </div>
-        <div class="spend-cell">
-          <div class="spend-num" id="spend-grand-total">--</div>
-          <div class="spend-label">Total (30d)</div>
-          <div class="spend-sub">Combined</div>
-        </div>
-      </div>
-
-      <div class="chart-wrap">
-        <div id="month-filter" class="month-filter" style="display:none"></div>
-        <div class="chart-legend">
-          <span><span class="swatch" style="background:var(--blue)"></span>Claude</span>
-          <span><span class="swatch" style="background:var(--amber)"></span>Codex</span>
-        </div>
-        <svg id="spend-chart" class="chart-svg" viewBox="0 0 960 240" preserveAspectRatio="none"></svg>
-      </div>
-
-      <div class="spend-note">
-        Claude: exact harness cost (total_cost_usd) per session · Codex: estimated from published API pricing · actual subscription charges differ · Codex API rates: $5/$30 per M tokens
-      </div>
     </div>
   </div>
 
@@ -1050,7 +895,6 @@
 
     let allPRs = [];
     let activeFilter = "all";
-    let currentTab = "prs";
 
     function paint(prs) {
       allPRs = (prs || []).slice().sort(comparePRs);
@@ -1058,7 +902,6 @@
     }
 
     function renderFiltered() {
-      if (currentTab !== "prs") return;
       const prsEl = document.getElementById("prs");
       const empty = document.getElementById("empty");
       const summary = document.getElementById("summary");
@@ -1218,153 +1061,6 @@
 
     lucide.createIcons();
 
-    let spendLoaded = false;
-    let allSpendDays = [];
-    let activeMonth = "all";
-
-    function fmtUSD(v) {
-      if (v === 0)   return "$0";
-      if (v >= 100)  return "$" + v.toFixed(0);
-      if (v >= 10)   return "$" + v.toFixed(1);
-      if (v >= 1)    return "$" + v.toFixed(2);
-      return "$" + v.toFixed(3);
-    }
-
-    function renderChart(days) {
-      // viewBox "0 0 960 240": ML=55 MR=5 MB=52 (room for rotated labels) MT=8
-      const ML = 55, MR = 5, MB = 52, MT = 8;
-      const CW = 960 - ML - MR;
-      const CH = 240 - MB - MT;
-
-      const N = days.length || 1;
-      const gw = CW / N;
-      const bw = Math.max(2, gw * 0.36);
-      const maxVal = Math.max(...days.map(d => d.claude + d.codex), 0.001);
-
-      const gridLines = [0.25, 0.5, 0.75, 1.0].map(f => {
-        const y = MT + CH * (1 - f);
-        return `<line x1="${ML}" y1="${y}" x2="${ML + CW}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>
-      <text x="${ML - 6}" y="${y + 4}" text-anchor="end" fill="var(--text-dim)" font-size="10" font-family="JetBrains Mono,monospace">${esc(fmtUSD(maxVal * f))}</text>`;
-      }).join("");
-
-      const baseline = `<line x1="${ML}" y1="${MT + CH}" x2="${ML + CW}" y2="${MT + CH}" stroke="var(--border-strong)" stroke-width="1"/>`;
-
-      const bars = days.map((d, i) => {
-        const gx = ML + i * gw;
-        const claudeH = (d.claude / maxVal) * CH;
-        const codexH  = (d.codex  / maxVal) * CH;
-        const cx = gx + gw * 0.1;
-        const dx = cx + bw + 1;
-        const midX = gx + gw / 2;
-        const label = d.date.slice(5); // MM-DD
-
-        const claudeBar = claudeH > 0
-          ? `<rect x="${cx.toFixed(1)}" y="${(MT+CH-claudeH).toFixed(1)}" width="${bw.toFixed(1)}" height="${claudeH.toFixed(1)}" fill="var(--blue)" opacity="0.85"/>`
-          : "";
-        const codexBar = codexH > 0
-          ? `<rect x="${dx.toFixed(1)}" y="${(MT+CH-codexH).toFixed(1)}" width="${bw.toFixed(1)}" height="${codexH.toFixed(1)}" fill="var(--amber)" opacity="0.85"/>`
-          : "";
-
-        // Rotated x-label — every day, rotated -45° for readability
-        const lx = midX.toFixed(1);
-        const ly = MT + CH + 8;
-        const xLabel = `<text x="${lx}" y="${ly}" transform="rotate(-45,${lx},${ly})" text-anchor="end" fill="var(--text-dim)" font-size="9" font-family="JetBrains Mono,monospace">${esc(label)}</text>`;
-
-        // Transparent hit area for tooltip
-        const hit = `<rect class="hit" data-date="${esc(d.date)}" data-claude="${d.claude.toFixed(4)}" data-codex="${d.codex.toFixed(4)}" x="${gx.toFixed(1)}" y="${MT}" width="${gw.toFixed(1)}" height="${CH + MB}" fill="transparent" style="cursor:default"/>`;
-
-        return claudeBar + codexBar + xLabel + hit;
-      }).join("");
-
-      const svg = document.getElementById("spend-chart");
-      svg.innerHTML = gridLines + baseline + bars;
-
-      const tooltip = document.getElementById("spend-tooltip");
-      for (const hit of svg.querySelectorAll(".hit")) {
-        hit.addEventListener("mousemove", (e) => {
-          const c = parseFloat(hit.dataset.claude), x = parseFloat(hit.dataset.codex);
-          tooltip.innerHTML =
-            `<span style="color:var(--text-dim)">${esc(hit.dataset.date)}</span><br>` +
-            `<span style="color:var(--blue)">● Claude</span>  ${fmtUSD(c)}<br>` +
-            `<span style="color:var(--amber)">● Codex</span>   ${fmtUSD(x)}<br>` +
-            `<strong>Total</strong>   ${fmtUSD(c + x)}`;
-          tooltip.style.display = "block";
-          tooltip.style.left = (e.clientX + 14) + "px";
-          tooltip.style.top  = (e.clientY - 10) + "px";
-        });
-        hit.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
-      }
-    }
-
-    function renderMonthFilter(days) {
-      const months = [...new Set(days.map(d => d.date.slice(0, 7)))].sort();
-      const el = document.getElementById("month-filter");
-      if (months.length <= 1) { el.style.display = "none"; return; }
-      el.style.display = "flex";
-      el.innerHTML = ["all", ...months].map(m => {
-        const label = m === "all" ? "All" : new Date(m + "-02").toLocaleDateString("en-US", {month: "short", year: "numeric"});
-        return `<button class="month-btn${activeMonth === m ? " active" : ""}" data-month="${m}">${esc(label)}</button>`;
-      }).join("");
-      el.querySelectorAll(".month-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-          activeMonth = btn.dataset.month;
-          const filtered = activeMonth === "all" ? allSpendDays : allSpendDays.filter(d => d.date.startsWith(activeMonth));
-          renderMonthFilter(allSpendDays);
-          const c = filtered.reduce((s, d) => s + d.claude, 0);
-          const x = filtered.reduce((s, d) => s + d.codex, 0);
-          document.getElementById("spend-claude-total").textContent = fmtUSD(c);
-          document.getElementById("spend-codex-total").textContent  = fmtUSD(x);
-          document.getElementById("spend-grand-total").textContent  = fmtUSD(c + x);
-          renderChart(filtered);
-        });
-      });
-    }
-
-    function renderSpend(days) {
-      spendLoaded = true;
-      allSpendDays = days;
-      activeMonth = "all";
-      const c = days.reduce((s, d) => s + d.claude, 0);
-      const x = days.reduce((s, d) => s + d.codex,  0);
-      document.getElementById("spend-claude-total").textContent = fmtUSD(c);
-      document.getElementById("spend-codex-total").textContent  = fmtUSD(x);
-      document.getElementById("spend-grand-total").textContent  = fmtUSD(c + x);
-      renderMonthFilter(days);
-      renderChart(days);
-    }
-
-    async function loadSpend() {
-      try {
-        const res = await fetch("/api/spend");
-        const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-        if (!Array.isArray(data.days)) throw new Error("unexpected response shape");
-        renderSpend(data.days);
-      } catch (e) {
-        document.getElementById("spend-view").insertAdjacentHTML("beforeend",
-          `<div class="error">Error loading spend data: ${esc(e.message)}</div>`);
-        spendLoaded = true;
-      }
-    }
-
-    function switchTab(name) {
-      currentTab = name;
-      for (const btn of document.querySelectorAll(".tab-btn")) {
-        btn.classList.toggle("active", btn.dataset.tab === name);
-      }
-      const prEls = ["error", "summary", "prs", "empty"];
-      for (const id of prEls) document.getElementById(id).style.display = name === "prs" ? "" : "none";
-      const spendEl = document.getElementById("spend-view");
-      if (spendEl) spendEl.style.display = name === "spend" ? "" : "none";
-      if (name === "prs") renderFiltered();
-      if (name === "spend" && !spendLoaded) loadSpend();
-    }
-
-    document.querySelector(".tab-bar").addEventListener("click", (e) => {
-      const btn = e.target.closest(".tab-btn");
-      if (btn) switchTab(btn.dataset.tab);
-    });
-
     // Paint cached data instantly (no spinner, no skeleton flash) before kicking off background refresh.
     const cached = readCache();
     if (cached) {
@@ -1375,6 +1071,5 @@
     }
     load();
   </script>
-  <div id="spend-tooltip"></div>
 </body>
 </html>
