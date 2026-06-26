@@ -8,30 +8,24 @@ import { buildStatusMap } from './status'
 import { computeLayout } from './layout'
 import { renderWorld, measureHeights } from './render'
 import { initTheme, createThemeToggle } from './theme'
-import { setupCanvas } from './canvas'
+import { setupCanvas, type CanvasController } from './canvas'
 import { setupMinimap, setupLegend } from './minimap'
+import { createRefetchButton } from './refetch'
+import type { PR } from './types'
 
 initTheme()
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 
-const viewport = document.createElement('div')
-viewport.className = 'viewport'
+// Persistent chrome — created once, never torn down.
+const refetchBtn = createRefetchButton(() => void refetch())
+app.append(createThemeToggle(), refetchBtn.el)
 
-const canvas = document.createElement('div')
-canvas.className = 'canvas'
+// Module-level controller ref for camera preservation.
+let controller: CanvasController | null = null
 
-const world = document.createElement('div')
-world.id = 'world'
-
-// SVG layer behind cards for spines; render.ts populates it and keeps it as a #world child.
-const svgNS = 'http://www.w3.org/2000/svg'
-const spines = document.createElementNS(svgNS, 'svg') as SVGSVGElement
-spines.id = 'spines'
-
-world.append(spines)
-viewport.append(canvas, world)
-app.append(viewport, createThemeToggle())
+// Guard against concurrent refetches.
+let fetching = false
 
 function showMessage(text: string): void {
   const el = document.createElement('div')
@@ -43,36 +37,111 @@ function showMessage(text: string): void {
   app.append(el)
 }
 
+function showToast(text: string): void {
+  // Remove any existing toast first.
+  app.querySelector('.toast')?.remove()
+
+  const toast = document.createElement('div')
+  toast.className = 'toast'
+  toast.textContent = text
+  app.append(toast)
+
+  setTimeout(() => {
+    // Guard: only remove if it's still the same element.
+    if (toast.isConnected) toast.remove()
+  }, 4000)
+}
+
+function render(prs: PR[], opts: { preserveCamera?: boolean } = {}): void {
+  // 1. Capture previous transform before teardown.
+  const prev = controller?.getTransform() ?? null
+
+  // 2. Remove existing viewport and overlay-message from app.
+  app.querySelector('.viewport')?.remove()
+  app.querySelector('.overlay-message')?.remove()
+
+  // 3. Pipeline.
+  const territories = buildForest(prs)
+  const statuses = buildStatusMap(territories)
+  const heights = measureHeights(territories)
+  const layout = computeLayout(territories, heights)
+
+  // 4. Empty state.
+  if (layout.nodes.length === 0) {
+    showMessage('No open PRs.')
+    controller = null
+    return
+  }
+
+  // 5. Build fresh viewport DOM.
+  const viewport = document.createElement('div')
+  viewport.className = 'viewport'
+
+  const canvas = document.createElement('div')
+  canvas.className = 'canvas'
+
+  const world = document.createElement('div')
+  world.id = 'world'
+
+  const svgNS = 'http://www.w3.org/2000/svg'
+  const spines = document.createElementNS(svgNS, 'svg') as SVGSVGElement
+  spines.id = 'spines'
+
+  world.append(spines)
+  viewport.append(canvas, world)
+
+  renderWorld({ world, svg: spines, territories, layout, statuses })
+  controller = setupCanvas({ viewport, world, worldBBox: layout.bbox })
+  setupMinimap({ parent: viewport, layout, worldBBox: layout.bbox, canvas: controller, viewport })
+  setupLegend({ parent: viewport, territories, layout, canvas: controller })
+
+  app.append(viewport)
+
+  // 6. Camera.
+  if (opts.preserveCamera && prev) {
+    controller.setTransform(prev)
+  } else {
+    const legendW = viewport.querySelector('.legend')?.getBoundingClientRect().width ?? 0
+    const minimapW = viewport.querySelector('.minimap')?.getBoundingClientRect().width ?? 0
+    controller.zoomToFit({ insets: { right: Math.max(legendW, minimapW) + 24 } })
+  }
+}
+
+async function refetch(): Promise<void> {
+  if (fetching) return
+  fetching = true
+  refetchBtn.setFetching(true)
+  try {
+    const prs = await fetchPRs()
+    render(prs, { preserveCamera: true })
+  } catch (e) {
+    showToast(`Refetch failed: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    refetchBtn.setFetching(false)
+    fetching = false
+  }
+}
+
+// `r` keybinding — triggers refetch without modifier keys, not in editable fields.
+window.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'r') return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.repeat) return
+  const target = event.target as HTMLElement
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+  if (target.isContentEditable) return
+  void refetch()
+})
+
 async function boot(): Promise<void> {
-  let prs
+  let prs: PR[]
   try {
     prs = await fetchPRs()
   } catch (e) {
     showMessage(`Failed to load PRs: ${e instanceof Error ? e.message : String(e)}`)
     return
   }
-
-  const territories = buildForest(prs)
-  const statuses = buildStatusMap(territories)
-  const heights = measureHeights(territories)
-  const layout = computeLayout(territories, heights)
-
-  if (layout.nodes.length === 0) {
-    showMessage('No open PRs.')
-    return
-  }
-
-  renderWorld({ world, svg: spines, territories, layout, statuses })
-
-  const controller = setupCanvas({ viewport, world, worldBBox: layout.bbox })
-  setupMinimap({ parent: viewport, layout, worldBBox: layout.bbox, canvas: controller, viewport })
-  setupLegend({ parent: viewport, territories, layout, canvas: controller })
-
-  // The legend (top-right) and minimap (bottom-right) are fixed HUD overlays; reserve
-  // their column on the right so zoom-to-fit never drops a territory behind them.
-  const legendW = viewport.querySelector('.legend')?.getBoundingClientRect().width ?? 0
-  const minimapW = viewport.querySelector('.minimap')?.getBoundingClientRect().width ?? 0
-  controller.zoomToFit({ insets: { right: Math.max(legendW, minimapW) + 24 } })
+  render(prs, { preserveCamera: false })
 }
 
 void boot()

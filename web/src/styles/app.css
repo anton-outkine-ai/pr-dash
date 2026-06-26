@@ -442,3 +442,23 @@ body {
 .refetch-btn.is-fetching .refetch-icon {
   animation: spin 0.8s linear infinite;
 }
+
+/* ----------------------------------------------------------------------- *
+ * Toast (transient error notice)
+ * ----------------------------------------------------------------------- */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 10px 16px;
+  max-width: 80vw;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--card-surface);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+}
