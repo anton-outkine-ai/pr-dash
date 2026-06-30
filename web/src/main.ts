@@ -11,6 +11,8 @@ import { initTheme, createThemeToggle } from './theme'
 import { setupCanvas, type CanvasController } from './canvas'
 import { setupMinimap, setupLegend } from './minimap'
 import { createRefetchButton } from './refetch'
+import { loadOrigins } from './positions'
+import { setupDrag } from './drag'
 import type { PR } from './types'
 
 initTheme()
@@ -23,6 +25,12 @@ app.append(createThemeToggle(), refetchBtn.el)
 
 // Module-level controller ref for camera preservation.
 let controller: CanvasController | null = null
+
+// Last rendered PR set, so a drop can relayout/rerender without a refetch.
+let lastPRs: PR[] = []
+
+// Previous normalization offset, for camera compensation across relayouts.
+let prevOffset = { x: 0, y: 0 }
 
 // Guard against concurrent refetches.
 let fetching = false
@@ -53,6 +61,8 @@ function showToast(text: string): void {
 }
 
 function render(prs: PR[], opts: { preserveCamera?: boolean } = {}): void {
+  lastPRs = prs
+
   // 1. Capture previous transform before teardown.
   const prev = controller?.getTransform() ?? null
 
@@ -64,12 +74,14 @@ function render(prs: PR[], opts: { preserveCamera?: boolean } = {}): void {
   const territories = buildForest(prs)
   const statuses = buildStatusMap(territories)
   const heights = measureHeights(territories)
-  const layout = computeLayout(territories, heights)
+  const pinned = loadOrigins()
+  const layout = computeLayout(territories, heights, pinned)
 
   // 4. Empty state.
   if (layout.nodes.length === 0) {
     showMessage('No open PRs.')
     controller = null
+    prevOffset = layout.offset
     return
   }
 
@@ -94,17 +106,31 @@ function render(prs: PR[], opts: { preserveCamera?: boolean } = {}): void {
   controller = setupCanvas({ viewport, world, worldBBox: layout.bbox })
   setupMinimap({ parent: viewport, layout, worldBBox: layout.bbox, canvas: controller, viewport })
   setupLegend({ parent: viewport, territories, layout, canvas: controller })
+  setupDrag({
+    world,
+    controller,
+    stableOrigins: layout.stableOrigins,
+    onDrop: () => render(lastPRs, { preserveCamera: true }),
+  })
 
   app.append(viewport)
 
   // 6. Camera.
   if (opts.preserveCamera && prev) {
+    // Compensate for any change in the normalization offset so non-dragged
+    // territories stay visually fixed. (screen = worldNorm*k + cam, with
+    // worldNorm = stable - offset ⇒ hold screen by cam += Δoffset*k.)
+    const off = layout.offset
+    prev.x += (off.x - prevOffset.x) * prev.k
+    prev.y += (off.y - prevOffset.y) * prev.k
     controller.setTransform(prev)
   } else {
     const legendW = viewport.querySelector('.legend')?.getBoundingClientRect().width ?? 0
     const minimapW = viewport.querySelector('.minimap')?.getBoundingClientRect().width ?? 0
     controller.zoomToFit({ insets: { right: Math.max(legendW, minimapW) + 24 } })
   }
+
+  prevOffset = layout.offset
 }
 
 async function refetch(): Promise<void> {

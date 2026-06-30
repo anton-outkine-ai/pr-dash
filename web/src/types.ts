@@ -98,6 +98,10 @@ export interface Layout {
   bbox: Box
   /** prKey(pr) -> LayoutNode, for connecting spines and lookups. */
   index: Map<string, LayoutNode>
+  /** Pre-normalization origin per repo (drag start needs it). */
+  stableOrigins: Map<string, { x: number; y: number }>
+  /** The (minX,minY) subtracted during normalization (camera compensation needs it). */
+  offset: { x: number; y: number }
 }
 
 export interface CardStatus {

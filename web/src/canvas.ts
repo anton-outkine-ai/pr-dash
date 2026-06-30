@@ -77,6 +77,12 @@ export function setupCanvas(opts: {
     unknown
   >()
     .scaleExtent([SCALE_MIN, SCALE_MAX])
+    .filter((event) => {
+      const t = event.target
+      if (t instanceof Element && t.closest('.territory-header')) return false
+      // Preserve d3-zoom's default filter (allow wheel, reject ctrl-drag and non-primary buttons).
+      return (!event.ctrlKey || event.type === 'wheel') && !event.button
+    })
     .on('zoom', (event: D3ZoomEvent<HTMLElement, unknown>) => {
       apply(event.transform)
     })

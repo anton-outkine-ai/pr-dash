@@ -133,6 +133,13 @@ body {
   overflow: hidden;
   border-bottom: 2px solid var(--repo);
   color: var(--text-primary);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.territory-header.dragging {
+  cursor: grabbing;
 }
 
 .territory-owner {
@@ -168,7 +175,7 @@ body {
   border-left: 3px solid var(--repo);
   border-radius: 8px;
   box-shadow: var(--card-shadow);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  transition: box-shadow 0.15s ease;
 }
 
 /* Ready: strong glow ring — the actionable "merge next" card. */

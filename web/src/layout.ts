@@ -40,34 +40,52 @@ interface Placed {
  * downward, base-on-top), then pack territories left→right with row wrapping.
  * Pure: data in → coordinates out, no DOM.
  */
-export function computeLayout(territories: Territory[], heights?: Map<string, number>): Layout {
+export function computeLayout(
+  territories: Territory[],
+  heights?: Map<string, number>,
+  pinned?: Map<string, { x: number; y: number }>,
+): Layout {
   const placed = territories.map((t) => layoutTerritory(t, heights))
 
   const nodes: LayoutNode[] = []
   const headers: TerritoryHeader[] = []
   const index = new Map<string, LayoutNode>()
+  const stableOrigins = new Map<string, { x: number; y: number }>()
 
-  // Horizontal flow with row wrapping.
+  // Horizontal flow with row wrapping (auto-flow for unpinned territories only).
   let cursorX = 0
   let rowY = 0
   let rowMaxH = 0
   let rowWidth = 0
-  let worldRight = 0
-  let worldBottom = 0
 
   territories.forEach((territory, i) => {
     const t = placed[i]
 
-    // Wrap to a new row when this territory would overflow the row width.
-    if (rowWidth > 0 && rowWidth + GUTTER + t.w > MAX_ROW_W) {
-      rowY += rowMaxH + GUTTER
-      cursorX = 0
-      rowMaxH = 0
-      rowWidth = 0
-    }
+    let originX: number
+    let originY: number
 
-    const originX = cursorX
-    const originY = rowY
+    const pin = pinned?.get(territory.repo)
+    if (pin) {
+      // Pinned: use the stored origin as-is (may be negative); do not touch
+      // the auto-flow cursor or trigger row-wrap.
+      originX = pin.x
+      originY = pin.y
+    } else {
+      // Wrap to a new row when this territory would overflow the row width.
+      if (rowWidth > 0 && rowWidth + GUTTER + t.w > MAX_ROW_W) {
+        rowY += rowMaxH + GUTTER
+        cursorX = 0
+        rowMaxH = 0
+        rowWidth = 0
+      }
+
+      originX = cursorX
+      originY = rowY
+
+      cursorX += t.w + GUTTER
+      rowWidth = rowWidth === 0 ? t.w : rowWidth + GUTTER + t.w
+      rowMaxH = Math.max(rowMaxH, t.h)
+    }
 
     // Offset every local node coord by the packing origin.
     for (const ln of t.nodes) {
@@ -91,17 +109,54 @@ export function computeLayout(territories: Territory[], heights?: Map<string, nu
       h: HEADER_H,
     })
 
-    worldRight = Math.max(worldRight, originX + t.w)
-    worldBottom = Math.max(worldBottom, originY + t.h)
-
-    cursorX += t.w + GUTTER
-    rowWidth = rowWidth === 0 ? t.w : rowWidth + GUTTER + t.w
-    rowMaxH = Math.max(rowMaxH, t.h)
+    // Record the pre-normalization origin (drag start reads this).
+    stableOrigins.set(territory.repo, { x: originX, y: originY })
   })
 
-  const bbox: Box = { x: 0, y: 0, w: worldRight, h: worldBottom }
+  // Normalization pass: shift the whole world so its top-left is (0,0).
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
 
-  return { nodes, headers, bbox, index }
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x)
+    minY = Math.min(minY, n.y)
+    maxX = Math.max(maxX, n.x + n.w)
+    maxY = Math.max(maxY, n.y + n.h)
+  }
+  for (const hd of headers) {
+    minX = Math.min(minX, hd.x)
+    minY = Math.min(minY, hd.y)
+    maxX = Math.max(maxX, hd.x + hd.w)
+    maxY = Math.max(maxY, hd.y + hd.h)
+  }
+
+  // Empty world guard.
+  if (!isFinite(minX)) {
+    return {
+      nodes,
+      headers,
+      bbox: { x: 0, y: 0, w: 0, h: 0 },
+      index,
+      stableOrigins,
+      offset: { x: 0, y: 0 },
+    }
+  }
+
+  // Subtract (minX,minY) from every node + header (index shares the objects).
+  for (const n of nodes) {
+    n.x -= minX
+    n.y -= minY
+  }
+  for (const hd of headers) {
+    hd.x -= minX
+    hd.y -= minY
+  }
+
+  const bbox: Box = { x: 0, y: 0, w: maxX - minX, h: maxY - minY }
+
+  return { nodes, headers, bbox, index, stableOrigins, offset: { x: minX, y: minY } }
 }
 
 /** Lay out a single territory with dagre and normalize to a local origin of (0,0). */

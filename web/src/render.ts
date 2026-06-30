@@ -129,11 +129,11 @@ function renderSpines(
       // Header/trunk band bottom-center → stack root top-center.
       if (header) {
         const from = { x: header.x + header.w / 2, y: header.y + header.h }
-        drawSegment(svg, from, topCenter(rootNode), territory.color, stack.root, statuses)
+        drawSegment(svg, from, topCenter(rootNode), territory.color, stack.root, statuses, territory.repo)
       }
 
       // Walk the tree: each parent bottom-center → child top-center.
-      walkStack(svg, stack.root, layout, territory.color, statuses)
+      walkStack(svg, stack.root, layout, territory.color, statuses, territory.repo)
     }
   }
 }
@@ -144,15 +144,16 @@ function walkStack(
   layout: Layout,
   color: ThemeColor,
   statuses: Map<string, CardStatus>,
+  repo: string,
 ): void {
   const parent = layout.index.get(prKey(node.pr))
   if (!parent) return
   for (const child of node.children) {
     const childNode = layout.index.get(prKey(child.pr))
     if (childNode) {
-      drawSegment(svg, bottomCenter(parent), topCenter(childNode), color, child, statuses)
+      drawSegment(svg, bottomCenter(parent), topCenter(childNode), color, child, statuses, repo)
     }
-    walkStack(svg, child, layout, color, statuses)
+    walkStack(svg, child, layout, color, statuses, repo)
   }
 }
 
@@ -175,8 +176,10 @@ function drawSegment(
   color: ThemeColor,
   target: StackNode,
   statuses: Map<string, CardStatus>,
+  repo: string,
 ): void {
   const path = document.createElementNS(SVG_NS, 'path')
+  path.setAttribute('data-repo', repo)
   const dy = to.y - from.y
   const c = Math.max(dy * 0.5, 12)
   path.setAttribute(
@@ -207,6 +210,7 @@ function renderHeader(header: {
 }): HTMLElement {
   const el = document.createElement('div')
   el.className = 'territory-header'
+  el.dataset.repo = header.repo
   el.style.left = `${header.x}px`
   el.style.top = `${header.y}px`
   el.style.width = `${header.w}px`
@@ -257,6 +261,7 @@ function renderCard(node: LayoutNode, status: CardStatus | undefined): HTMLEleme
 function buildCard(pr: PR, status: CardStatus | undefined): HTMLElement {
   const card = document.createElement('div')
   card.className = 'card'
+  card.dataset.repo = pr.repo
   setRepoShades(card, repoColor(pr.repo))
 
   if (status?.ready) card.classList.add('ready')
