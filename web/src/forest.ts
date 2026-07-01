@@ -8,8 +8,8 @@ function prTime(pr: PR): string {
 
 /**
  * Reconstruct the forest of stacks from base-branch chains (spec §7).
- * Returns one Territory per repo, stacks ordered newest-first, territories
- * ordered newest-first.
+ * Returns one Territory per repo, stacks ordered by base PR number ascending,
+ * territories ordered newest-first.
  */
 export function buildForest(prs: PR[]): Territory[] {
   // 1. Group PRs by repo.
@@ -42,15 +42,19 @@ export function buildForest(prs: PR[]): Territory[] {
       })
     }
 
-    // 6. Order stacks within a territory by recency, newest first.
-    stacks.sort((a, b) => (a.newest < b.newest ? 1 : a.newest > b.newest ? -1 : 0))
+    // 6. Order stacks left-to-right: lowest base PR number leftmost.
+    stacks.sort((a, b) => a.root.pr.number - b.root.pr.number)
+
+    const territoryNewest = stacks.reduce(
+      (max, s) => (s.newest > max ? s.newest : max),
+      '',
+    )
 
     territories.push({
       repo,
       color: repoColor(repo),
       stacks,
-      // 7. Territory recency = its newest stack's recency.
-      newest: stacks.length ? stacks[0].newest : '',
+      newest: territoryNewest,
     })
   }
 

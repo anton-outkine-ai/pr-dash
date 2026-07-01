@@ -181,6 +181,7 @@ function layoutTerritory(territory: Territory, heights?: Map<string, number>): P
   }
 
   dagre.layout(g)
+  packStacksLeftToRight(g, territory, trunkId)
 
   // Collect laid-out positions (dagre gives node CENTER coords).
   let minX = Infinity
@@ -239,6 +240,55 @@ function layoutTerritory(territory: Territory, heights?: Map<string, number>): P
     trunkY: trunkTop,
     w: maxX - minX,
     h: maxY - minY,
+  }
+}
+
+/** Collect every dagre node id in a stack tree. */
+function stackNodeIds(root: StackNode): string[] {
+  const ids: string[] = []
+  const walk: StackNode[] = [root]
+  while (walk.length > 0) {
+    const node = walk.pop()!
+    ids.push(prKey(node.pr))
+    for (const child of node.children) walk.push(child)
+  }
+  return ids
+}
+
+/**
+ * Dagre's order heuristic can place sibling stack roots right-to-left.
+ * Repack stacks in `territory.stacks` order (lowest base PR leftmost).
+ */
+function packStacksLeftToRight(g: Graph, territory: Territory, trunkId: string): void {
+  let cursorX = 0
+
+  for (const stack of territory.stacks) {
+    const ids = stackNodeIds(stack.root)
+    let minLeft = Infinity
+    let maxRight = -Infinity
+
+    for (const id of ids) {
+      const n = g.node(id)
+      const w = n.width ?? CARD_W
+      const left = (n.x ?? 0) - w / 2
+      const right = left + w
+      minLeft = Math.min(minLeft, left)
+      maxRight = Math.max(maxRight, right)
+    }
+
+    if (!isFinite(minLeft)) continue
+
+    const shift = cursorX - minLeft
+    for (const id of ids) {
+      const n = g.node(id)
+      n.x = (n.x ?? 0) + shift
+    }
+
+    cursorX = maxRight + shift + NODESEP
+  }
+
+  if (cursorX > NODESEP && g.hasNode(trunkId)) {
+    g.node(trunkId).x = (cursorX - NODESEP) / 2
   }
 }
 
